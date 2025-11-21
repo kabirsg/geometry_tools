@@ -110,5 +110,5 @@ if __name__ == "__main__":
     if len(sys.argv) > 3:
         surf_type = sys.argv[3] #options: a or pt
     else:
-        surf_type = 'a' #default is an aneurysm surface file
+        surf_type = 'pt' #default is an pulsatile tinnitis surface file
     surface_prep(surf_file, proj_dir, surf_type)

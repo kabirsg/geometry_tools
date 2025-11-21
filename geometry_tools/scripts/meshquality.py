@@ -561,8 +561,11 @@ def MeshQualityMeasures(title, polyDataVolMesh, outputfilename = '',
         out.write ('*** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***\n')
         out.write ('--- Mesh Quality Check : \n')
         out.write ('Number of cells: %i, Number of points: %i\n' % (polyDataVolMesh.GetNumberOfCells(), polyDataVolMesh.GetNumberOfPoints()))
-        if (polyDataVolMesh.GetNumberOfCells() > 6000000) or (polyDataVolMesh.GetNumberOfCells() < 1000):
-            out.write (' \n WARNING: the number of cells is suspicious. \n ')
+        num_cells = polyDataVolMesh.GetNumberOfCells()
+        if (num_cells > 6000000):
+            out.write (f' \n WARNING: the number of cells is suspiciously high - {num_cells}. \n ')
+        elif num_cells < 1000: 
+            out.write (f' \n WARNING: the number of cells is suspiciously low - {num_cells}. \n ')
         for meshType in meshTypes:
             out.write ('\n')
             eval('quality.Set' + meshType[0] + meshType[2][0][0])
