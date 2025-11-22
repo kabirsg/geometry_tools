@@ -29,6 +29,7 @@ from scipy.spatial import cKDTree as KDTree
 from scipy.interpolate import interp1d
 from pathlib import Path
 import sys
+import argparse
 
 def define_fr(obj_pt, flowrate=5.578888889):
     cell_ids = obj_pt.surf.faces.reshape(-1, 4)[obj_pt.surf.cell_data[obj_pt.name]==1][:,1:]
@@ -42,8 +43,8 @@ def mapped_info(prep_dir, sss, ss, lab, fen, syl, emissary, condylar):
     surf_file = sorted(prep_dir.glob('*_cl.vtp'))[0]
     remeshed_file = out_dir/(surf_file.stem  +'_remeshed.vtp')
     dec = str(int(round(float(sss) - int(float(sss)), 1)*10))
-    cent_graph_file = out_dir/(surf_file.stem  +'_centerline_graph_' + str(int(float(sss))) + 'p' + dec + '.vtp')
-    graphed_cl_file = out_dir/(surf_file.stem +'_centerline_graph.vtp')
+    #cent_graph_file = out_dir/(surf_file.stem  +'_centerline_graph_' + str(int(float(sss))) + 'p' + dec + '.vtp')
+    #graphed_cl_file = out_dir/(surf_file.stem +'_centerline_graph.vtp')
     cent_graph_vmtk = out_dir/(surf_file.stem +'_centerline_graph_vmtk.vtp')
     cent_file = out_dir/(surf_file.stem + '__' + str(int(float(sss))) + 'p' + dec + 'centerline_mapped.vtp')
     mapped_file = out_dir/(surf_file.stem + '_' + str(int(float(sss))) + 'p' + dec + '_mappedsys.vtp')
@@ -239,26 +240,36 @@ def mapped_info(prep_dir, sss, ss, lab, fen, syl, emissary, condylar):
     m.surf.save(mapped_file)
 
 if __name__ == "__main__":
-    prep_dir = Path(sys.argv[1]) 
-    if len(sys.argv)>3:
-        sss = sys.argv[2]
-        ss=sys.argv[3]
-        lab=sys.argv[4]
-        fen=sys.argv[5]
-        syl= sys.argv[6]
-        emissary = sys.argv[7]
-        condylar = sys.argv[8]
-    else:
-        sss = sys.argv[2]#6.816019219
-        ss='False'
-        lab='False'
-        fen='False'
-        syl = 'False'
-        emissary='False'
-        condylar = 'False'
-
-    mapped_info(prep_dir=prep_dir, sss = sss, ss = ss, lab = lab, fen = fen, syl = syl, emissary=emissary, condylar=condylar)
-
+    # prep_dir = Path(sys.argv[1]) 
+    # print(type(prep_dir))
+    # if len(sys.argv)>3:
+    #     sss = sys.argv[2]
+    #     ss=sys.argv[3]
+    #     lab=sys.argv[4]
+    #     fen=sys.argv[5]
+    #     syl= sys.argv[6]
+    #     emissary = sys.argv[7]
+    #     condylar = sys.argv[8]
+    # else:
+    #     sss = sys.argv[2]#6.816019219
+    #     ss='False'
+    #     lab='False'
+    #     fen='False'
+    #     syl = 'False'
+    #     emissary='False'
+    #     condylar = 'False'
+    
+    parser = argparse.ArgumentParser(description="Arguments for map_info_direct.\nClip folder location must be provided\nFor all present vessels, an inlet flow rate must be provided. If the vessel is not in the model, either don't enter it's flag or enter False for that vessel")
+    parser.add_argument('prep_dir', help='Location to the clip folder (output of surface prep file)')
+    parser.add_argument('-sss', '--superior-sigmoid-sinus', required=False, type=int, default=6.816, help='Flow rate through the inlet superior sinus (usually the inlet flow rate)')
+    parser.add_argument('-ss', '--sigmoid-sinus', required=False, default='False', help='Flow rate through the sigmoid sinus')
+    parser.add_argument('-l', '--labbe', required=False, default='False', help='Flow Rate through Labbe')
+    parser.add_argument('-f', '--fenestration-stenosis', required='False', default=False, help='Flow rate through the fenestration stenosis')
+    parser.add_argument('-sy', '--sylvian-vein', required=False, default='False', help='Flow rate through the Sylvian Vein')
+    parser.add_argument('-e', '--emissary-vein', required=False,  default='False', help='Flow rate through Emissary Vein')
+    parser.add_argument('-c', '--condylar-vein', required=False, default='False', help='Flow rate through the condylar vein')
+    args = parser.parse_args()
+    mapped_info(prep_dir=Path(args.prep_dir), sss = args.superior_sigmoid_sinus, ss = args.sigmoid_sinus, lab = args.labbe, fen = args.fenestration_stenosis, syl = args.sylvian_vein, emissary=args.emissary_vein, condylar=args.condylar_vein)    
 
 '''
     Old crappy way. Leaving this here for reference, not for use!
