@@ -3,17 +3,18 @@ This file contains a method for preparing a segmented surface mesh that has been
 for creating the mappings for a PT surface mesh. Currently only does unilateral.
 
 Call this file using:
-map_info.py prep_dir sss ss lab fen syl emissary condylar
+map_info_direct.py [path/to/prep/dir] -sss [sss_flow_rate] -ss [ss_flow_rate] -l [labbe_flow_rate] -f [True/False] -s [sylvian_flow_rate] -e [emissary_flow_rate] -c [condylar_flow_rate]
 
 Where
--prep_dir is the directory your surface mesh from 'surface_prep.py' is stored
--sss is a float indicating the Superior Saggital Sinus flow rate at peak systole in mL/s
--ss is a float indicating the Straight Sinus flow rate at peak systole in mL/s
--lab is a float indicating the Labbe flow rate at peak systole mL/s
--fen indicates True or False if there is a fenestration (currently only set up for one)
--syl is a float indicating the Sylvian vein flow rate at peak systole mL/s
--emissary is a float indicating the Emissary vein outlet ratio
--condylar is a float indicating the Condylar vein outlet ratio
+The values in the [square_brackets] are values that have to be filled in by the user (You!)
+-prep_dir is the path to the directory your surface mesh from 'surface_prep.py' is stored
+-sss_flow_rate is a float indicating the Superior Saggital Sinus flow rate at peak systole in mL/s
+-ss_flow_rate is a float indicating the Straight Sinus flow rate at peak systole in mL/s
+-labbe_flow_rate is a float indicating the Labbe flow rate at peak systole mL/s
+-f indicates True or False if there is a fenestration (currently only set up for one)
+-sylvian_flow_rate is a float indicating the Sylvian vein flow rate at peak systole mL/s
+-emissary_flow_rate is a float indicating the Emissary vein outlet ratio
+-condylar_flow_rate is a float indicating the Condylar vein outlet ratio
 
 defaults to one flow rate for the whole geometry, which is 6.816019219 for peak systolic Superior Sinus inflow
 

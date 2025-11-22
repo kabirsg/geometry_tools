@@ -67,5 +67,4 @@ For an example of using this for meshing, see the `meshing_example.sh` file in `
 There are newer versions of pyvista that have more functionality. Do not be tempted! This will have to be updated at some point in the near future.
 
 # How To Run
-See the document Meshing_Pipeline.pdf which was written by Gurnish. It has been marked up by me (Anna) because some things needed clarification, so read the comments too.
-
+The Meshing_Pipeline.pdf file was written by Gurnish and Anna and is up to date, except for the map_info_direct file that takes in arguments differently now. Please look at docstring at the top of the file or ask Kabir for details.
