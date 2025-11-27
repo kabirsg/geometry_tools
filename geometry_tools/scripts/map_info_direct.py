@@ -51,6 +51,7 @@ def mapped_info(prep_dir, sss, ss, lab, fen, syl, emissary, condylar):
     mapped_file = out_dir/(surf_file.stem + '_' + str(int(float(sss))) + 'p' + dec + '_mappedsys.vtp')
     planes_files = out_dir/(surf_file.stem + '_planes_' + str(int(float(sss))) + 'p' + dec + '.vtm')
     if not mapped_file.exists():
+        print("No mapped file")
         #surf = pv.read(surf0_file) #use unprepped surface for the centerline map
         if not remeshed_file.exists(): #use remeshed surface
             surf = vmtk.surface_remeshing(pv.read(surf_file), edgelength=0.5, iterations=5)
@@ -65,7 +66,7 @@ def mapped_info(prep_dir, sss, ss, lab, fen, syl, emissary, condylar):
         #m.clip_boundaries()
         #print(cent_file)
         if not cent_file.exists():
-        
+            print("Remaking centerlines")
             m.centerlines = pv.read(cent_graph_vmtk)
             m.centerlines = vmtk.resample_cl(m.centerlines, length=1.4) #so we don't have as many planes and points are equispaced
             #Use the centerline points to create planes
@@ -262,10 +263,10 @@ if __name__ == "__main__":
     
     parser = argparse.ArgumentParser(description="Arguments for map_info_direct.\nClip folder location must be provided\nFor all present vessels, an inlet flow rate must be provided. If the vessel is not in the model, either don't enter it's flag or enter False for that vessel")
     parser.add_argument('prep_dir', help='Location to the clip folder (output of surface prep file)')
-    parser.add_argument('-sss', '--superior-sigmoid-sinus', required=False, type=int, default=6.816, help='Flow rate through the inlet superior sinus (usually the inlet flow rate)')
+    parser.add_argument('-sss', '--superior-sigmoid-sinus', required=False, type=float, default=6.816019219, help='Flow rate through the inlet superior sinus (usually the inlet flow rate)')
     parser.add_argument('-ss', '--sigmoid-sinus', required=False, default='False', help='Flow rate through the sigmoid sinus')
     parser.add_argument('-l', '--labbe', required=False, default='False', help='Flow Rate through Labbe')
-    parser.add_argument('-f', '--fenestration-stenosis', required='False', default=False, help='Flow rate through the fenestration stenosis')
+    parser.add_argument('-f', '--fenestration-stenosis', required='False', default=False, help='Boolean (True or False) indicating the presence of a fenestration stenosis')
     parser.add_argument('-sy', '--sylvian-vein', required=False, default='False', help='Flow rate through the Sylvian Vein')
     parser.add_argument('-e', '--emissary-vein', required=False,  default='False', help='Flow rate through Emissary Vein')
     parser.add_argument('-c', '--condylar-vein', required=False, default='False', help='Flow rate through the condylar vein')

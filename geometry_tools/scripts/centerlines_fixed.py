@@ -18,7 +18,7 @@ from scipy.spatial import cKDTree as KDTree
 from pathlib import Path
 import sys
 
-def make_cl(prep_dir, case_name):
+def make_cl(prep_dir, case_name, edge_length, iters, r, resample_step_length):
     out_dir = prep_dir.parent
     surf_file = sorted(prep_dir.glob('*cl.vtp'))[0]
     surf=pv.read(surf_file)
@@ -26,13 +26,13 @@ def make_cl(prep_dir, case_name):
     graphed_cl_file = out_dir/(case_name+'_centerline_graph_vmtk.vtp')
     resampled_file =  out_dir/(case_name+'_centerline_resampled.vtp')
     if not remeshed_file.exists():
-        surf = vmtk.surface_remeshing(surf, edgelength=0.4, iterations = 15)
+        surf = vmtk.surface_remeshing(surf, edgelength=edge_length, iterations = iters)
         surf.save(remeshed_file)
         
     m = Mesher(include_aneurysms=False)
     
     if not graphed_cl_file.exists():
-        centerlines, graph = vmtk.network_extractor(surf, ratio = 1.01)
+        centerlines, graph = vmtk.network_extractor(surf, ratio = r)
         #print(centerlines.cell_data)
         #m.centerlines = vmtk.resample_cl(m.centerlines, length=0.2)
         #centerlines = vmtk.centerline_geometry(centerlines)
@@ -63,7 +63,7 @@ def make_cl(prep_dir, case_name):
             centerlines_seg = vmtk.centerlines(
 	            surf, 
 	            seed_selector='idlist', 
-	            resampling_step_length = 1,
+	            resampling_step_length = resample_step_length,
 	            src_ids=inlet_ids,
 	            target_ids=outlet_ids,
 	            )
@@ -81,7 +81,7 @@ def make_cl(prep_dir, case_name):
 
     else:
         m.centerlines =  pv.read(graphed_cl_file)
-        centerline_resampled = vmtk.resample_cl(m.centerlines, length=1.5)
+        centerline_resampled = vmtk.resample_cl(m.centerlines, length=resample_step_length) #Was originally 1.5 from Anna
         centerline_resampled.save(resampled_file)
 
 def print_next_step(): 
@@ -95,6 +95,13 @@ def print_next_step():
 
 if __name__ == "__main__":
     prep_dir = Path(sys.argv[1])
+    if prep_dir == "info": 
+        print(f'Usage of centerlines_fixed.py file:\npython centerlines_fixed.py [path/to/prep/dir] [case_name] [optional: number_of_iterations] [optional: ratio]')
+        sys.exit()
     case_name = sys.argv[2] 
-    make_cl(prep_dir=prep_dir, case_name=case_name)
+    edge_length = 0.8 #Edge length of the remeshed surface - Default is 0.4
+    iters=10 #Number of iterations for surface remeshing - Default is 10
+    ratio = 1.1 #Tolerance/weighting factor for pruning the Voronoi diagram - Default is 1.01
+    resample_step_length = 1.5 #Primary parameter for density - Default is 1.5 -> places a centerline point every _ [units of the file] along the centerline
+    make_cl(prep_dir=prep_dir, case_name=case_name, edge_length=edge_length, iters=iters, r=ratio, resample_step_length=resample_step_length)
     print_next_step()
