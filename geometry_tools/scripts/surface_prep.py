@@ -77,7 +77,7 @@ def surface_prep(surf_file, proj_dir, surf_type):
             accept = False
             while not accept:
                 if not clipped_surf.exists(): 
-            	    m.clip_boundaries(method='box')
+                    m.clip_boundaries(method='box')
                 else:
                     m.surf = pv.read(clipped_surf)
                 m.surf.save(clipped_surf)
@@ -105,10 +105,15 @@ def surface_prep(surf_file, proj_dir, surf_type):
 
 
 if __name__ == "__main__":
-    surf_file = sys.argv[1]
-    proj_dir = sys.argv[2]
-    if len(sys.argv) > 3:
-        surf_type = sys.argv[3] #options: a or pt
+    if len(sys.argv) == 1: 
+        surf_file = "/home/kabir/PT/PTSeg106_v8/PTSeg106_base_0p64.stl"
+        proj_dir = "/home/kabir/PT/PTSeg106_v8/PTSeg106_clip"
+        surf_type = 'pt' #options: a or pt
     else:
-        surf_type = 'pt' #default is an pulsatile tinnitis surface file
+        surf_file = sys.argv[1]
+        proj_dir = sys.argv[2]
+        if len(sys.argv) > 3:
+            surf_type = sys.argv[3] #options: a or pt
+        else:
+            surf_type = 'pt' #default is a pulsatile tinnitus surface file
     surface_prep(surf_file, proj_dir, surf_type)

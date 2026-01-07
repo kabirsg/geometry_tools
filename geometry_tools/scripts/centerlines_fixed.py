@@ -33,11 +33,11 @@ def make_cl(prep_dir, case_name, edge_length, iters, r, resample_step_length):
     
     if not graphed_cl_file.exists():
         centerlines, graph = vmtk.network_extractor(surf, ratio = r)
-        #print(centerlines.cell_data)
-        #m.centerlines = vmtk.resample_cl(m.centerlines, length=0.2)
-        #centerlines = vmtk.centerline_geometry(centerlines)
-        #m.centerlines.save(out_dir/(case_name+'_centerline.vtp'))
-        #m.centerlines = vmtk.centerlines_smooth(m.centerlines, iterations=1, sm_factor=0.1)
+        print(centerlines.cell_data)
+        centerlines = vmtk.resample_cl(centerlines, length=0.2)
+        # centerlines = vmtk.centerline_geometry(centerlines)
+        # m.centerlines.save(out_dir/(case_name+'_centerline.vtp'))
+        # m.centerlines = vmtk.centerlines_smooth(m.centerlines, iterations=1, sm_factor=0.1)
         graph.save(out_dir/(case_name+'_graph.vtp'))
         val = input("Is there a fenestration in this case? [y/n]: ")
         centerlines = vmtk.centerline_geometry(centerlines)
@@ -99,9 +99,9 @@ if __name__ == "__main__":
         print(f'Usage of centerlines_fixed.py file:\npython centerlines_fixed.py [path/to/prep/dir] [case_name] [optional: number_of_iterations] [optional: ratio]')
         sys.exit()
     case_name = sys.argv[2] 
-    edge_length = 0.8 #Edge length of the remeshed surface - Default is 0.4
+    edge_length = 0.4 #Edge length of the remeshed surface - Default is 0.4
     iters=10 #Number of iterations for surface remeshing - Default is 10
-    ratio = 1.1 #Tolerance/weighting factor for pruning the Voronoi diagram - Default is 1.01
+    ratio = 1.01 #Ratio between the sphere step and the local maxium radius
     resample_step_length = 1.5 #Primary parameter for density - Default is 1.5 -> places a centerline point every _ [units of the file] along the centerline
     make_cl(prep_dir=prep_dir, case_name=case_name, edge_length=edge_length, iters=iters, r=ratio, resample_step_length=resample_step_length)
     print_next_step()
