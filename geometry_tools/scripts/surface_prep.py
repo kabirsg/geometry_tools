@@ -12,7 +12,6 @@ Where
 -surf_type is pt or a for PT or aneurysm case respectively
 
 """
-
 from pathlib import Path 
 import pyvista as pv 
 from geometry_tools.meshing import Mesher
@@ -79,7 +78,7 @@ def surface_prep(surf_file, proj_dir, surf_type):
                 plotter.add_axes()
                 plotter.show()
                 surf = vmtk.flow_ext(mesher.surf, mesher.centerlines, mesher.inlet_ids) #Adds inlet flow extension only
-                extender = cc.Flow_Extender(pv.wrap(mesher.surf), mesher.centerlines,inlet_points=mesher.inlet_points, outlet_points=mesher.outlet_points) #Adds outlet flow extension only
+                extender = cc.Flow_Extender(pv.wrap(surf), mesher.centerlines,inlet_points=mesher.inlet_points, outlet_points=mesher.outlet_points) #Adds outlet flow extension only
                 accept = extender.accept
             mesher.surf = extender.surf
             mesher.update_inlets_outlets()         
