@@ -21,7 +21,6 @@ from geometry_tools import vmtk_wrapper as vmtk
 import time
 from datetime import timedelta
 import sys 
-import numpy as np
 
 def surface_prep(surf_file, proj_dir, surf_type):
     """ Basic surface prep.
@@ -31,15 +30,6 @@ def surface_prep(surf_file, proj_dir, surf_type):
     if not proj_dir.exists():
         proj_dir.mkdir()
     
-    '''
-    surf_output_dir = proj_dir / '01_clipped'  
-    points_output_dir = proj_dir / '01_points' 
-    neckpoints_output_dir = proj_dir / '01_neckpoints' 
-
-    for f in [surf_output_dir, points_output_dir, neckpoints_output_dir]:
-        if not f.exists():
-            f.mkdir(parents=True)
-    '''
     # Output files
     surf_file_out = proj_dir / (surf_file.stem + '_cl.vtp')
     clipped_surf = proj_dir / (surf_file.stem + '_noext.vtp')
@@ -55,47 +45,47 @@ def surface_prep(surf_file, proj_dir, surf_type):
         surf = pv.read(surf_file)
         surf = surf.compute_normals(auto_orient_normals=False)
         if surf_type=='a': 
-            m = Mesher(surf, include_aneurysms=True)
+            mesher = Mesher(surf, include_aneurysms=True)
             anubool=True
         else:
-            m = Mesher(surf) 
+            mesher = Mesher(surf) 
             anubool=False
 
         if surf_type=='a':
-            m.clip_boundaries()
-            m.set_inlets_outlets()
-            m.pick_aneurysm()
-            m.copy_structure() #this makes the surface mesh (m.surf) into a pv.PolyData object  
+            mesher.clip_boundaries()
+            mesher.set_inlets_outlets()
+            mesher.pick_aneurysm()
+            mesher.copy_structure() #this makes the surface mesh (mesher.surf) into a pv.PolyData object  
             # Select aneurysms
-            s = cc.SelectGeodesic(m.surf)
+            s = cc.SelectGeodesic(mesher.surf)
             s.interact(title='Isolate aneurysms.')
             s.save_stored_points(neck_file_out)
-            m.surf = s.mesh 
-            m.generate_centerlines(include_aneurysms=True)
-            m.surf, m.centerlines = vmtk.flow_extensions(m.surf, m.centerlines)
+            mesher.surf = s.mesh 
+            mesher.generate_centerlines(include_aneurysms=True)
+            mesher.surf, mesher.centerlines = vmtk.flow_extensions(mesher.surf, mesher.centerlines)
         else:
             accept = False
             while not accept:
                 if not clipped_surf.exists(): 
-                    m.clip_boundaries(method='box')
+                    mesher.clip_boundaries(method='box')
                 else:
-                    m.surf = pv.read(clipped_surf)
-                m.surf.save(clipped_surf)
-                m.set_inlets_outlets()
-                m.generate_centerlines_multi(proj_dir)  
-                p=pv.Plotter()
-                p.add_mesh(m.surf,opacity=0.3)
-                p.add_points(m.centerlines.points, color='red', render_points_as_spheres=True)
-                p.add_axes()
-                p.show()
-                surf = vmtk.flow_ext(m.surf, m.centerlines, m.inlet_ids)
-                extender = cc.Flow_Extender(pv.wrap(surf), m.centerlines,inlet_points=m.inlet_points, outlet_points=m.outlet_points)
+                    mesher.surf = pv.read(clipped_surf)
+                mesher.surf.save(clipped_surf)
+                mesher.set_inlets_outlets()
+                mesher.generate_centerlines_multi(proj_dir)  
+                plotter=pv.Plotter()
+                plotter.add_mesh(mesher.surf,opacity=0.3)
+                plotter.add_points(mesher.centerlines.points, color='red', render_points_as_spheres=True)
+                plotter.add_axes()
+                plotter.show()
+                surf = vmtk.flow_ext(mesher.surf, mesher.centerlines, mesher.inlet_ids) #Adds inlet flow extension only
+                extender = cc.Flow_Extender(pv.wrap(mesher.surf), mesher.centerlines,inlet_points=mesher.inlet_points, outlet_points=mesher.outlet_points) #Adds outlet flow extension only
                 accept = extender.accept
-            m.surf = extender.surf
-            m.update_inlets_outlets()         
+            mesher.surf = extender.surf
+            mesher.update_inlets_outlets()         
 
-        m.surf.save(surf_file_out) #saves the clipped surface with extensions
-        m.save_inlet_outlet_points(points_file_out, include_aneurysms=anubool, include_normals = True)
+        mesher.surf.save(surf_file_out) #saves the clipped surface with extensions
+        mesher.save_inlet_outlet_points(points_file_out, include_aneurysms=anubool, include_normals = True)
 
         time_spent = time.time() - case_start
         print('Case done', timedelta(seconds=time_spent))
