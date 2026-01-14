@@ -77,8 +77,8 @@ def surface_prep(surf_file, proj_dir, surf_type):
                 plotter.add_points(mesher.centerlines.points, color='red', render_points_as_spheres=True)
                 plotter.add_axes()
                 plotter.show()
-                surf = vmtk.flow_ext(mesher.surf, mesher.centerlines, mesher.inlet_ids) #Adds inlet flow extension only
-                extender = cc.Flow_Extender(pv.wrap(surf), mesher.centerlines,inlet_points=mesher.inlet_points, outlet_points=mesher.outlet_points) #Adds outlet flow extension only
+                surf_vmtk_inlet_flow_ext = vmtk.flow_ext(mesher.surf, mesher.centerlines, mesher.inlet_ids) #Adds inlet flow extension only
+                extender = cc.Flow_Extender(pv.wrap(surf_vmtk_inlet_flow_ext), mesher.centerlines,inlet_points=mesher.inlet_points, outlet_points=mesher.outlet_points).add_outlet_flow_ext() #Creates a Flow Extender object and runs the function to create the outlet flow extensions
                 accept = extender.accept
             mesher.surf = extender.surf
             mesher.update_inlets_outlets()         
