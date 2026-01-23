@@ -1372,9 +1372,15 @@ class Flow_Extender():
         self.inlet_points=inlet_points
         self.outlet_points = outlet_points
         self.accept = True
+    
+    '''
+    Runs the three functions that are required to create a Flow Extension on the outlet only
+    '''
+    def add_outlet_flow_ext(self):
         self.get_boundary_pts()
         self.get_normal_radius_effective()
         self.extrude()
+        return self
 
     def get_boundary_pts(self):
         edges = self.surf.extract_feature_edges(boundary_edges=True, feature_edges=False, manifold_edges=False)
