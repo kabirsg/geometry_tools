@@ -94,11 +94,15 @@ def print_next_step():
     print("Command: map_info_direct.py [path/to/clipped/folder] [flowrate_at_inlet_1] [flowrate_at_inlet_2] False False False False False")
 
 if __name__ == "__main__":
-    prep_dir = Path(sys.argv[1])
-    if prep_dir == "info": 
-        print(f'Usage of centerlines_fixed.py file:\npython centerlines_fixed.py [path/to/prep/dir] [case_name] [optional: number_of_iterations] [optional: ratio]')
-        sys.exit()
-    case_name = sys.argv[2] 
+    if len(sys.argv) == 1: 
+        prep_dir = Path("/home/kabir/PT/PTSeg106_raw/PTSeg106_clip")
+        case_name = "PTSeg106_v2"
+    else:
+        prep_dir = Path(sys.argv[1])
+        if prep_dir == "info": 
+            print(f'Usage of centerlines_fixed.py file:\npython centerlines_fixed.py [path/to/prep/dir] [case_name] [optional: number_of_iterations] [optional: ratio]')
+            sys.exit()
+        case_name = sys.argv[2] 
     edge_length = 0.4 #Edge length of the remeshed surface - Default is 0.4
     iters=10 #Number of iterations for surface remeshing - Default is 10
     ratio = 1.01 #Ratio between the sphere step and the local maxium radius
