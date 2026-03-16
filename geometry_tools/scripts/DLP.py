@@ -5,6 +5,7 @@ import vmtk
 from pathlib import Path
 import pyvista as pv
 import matplotlib.pyplot as plt
+from scipy.signal import argrelextrema
 
 class LumpedParameter:
     def __init__(self, cline_file, Q, rho, Kt, mu):
@@ -29,51 +30,27 @@ class LumpedParameter:
         self.point_length_dict = {}#This is a dictionary with key : value pairs being -> point_id : (point_coords, length_along_centerline)
         self.radius_array_np = vtk_to_numpy(self.polydata.GetPointData().GetArray("MaximumInscribedSphereRadius"))
         self.point_array_np = vtk_to_numpy(self.polydata.GetPoints().GetData())
+        self.length_array = [0] #Array holding the length along the centerline for all the points - To not mess up indexes, the value for index 0 is given a filler value
 
-        n_points = len(self.point_array_np)
-        initial_point = self.point_array_np[1]
         length_along_cl = 0 #The distance along the centerline will be calculated as a sum of the distances between all the points along the centerline
-        
-        for i in range(n_points):
+        #Not including the first or last point - messes it up for some reason
+        for i in range(1, len(self.point_array_np)-1):
             point_i = self.point_array_np[i] #Returns the [X Y Z] coordinates for the centerline point
-            length_along_cl += np.linalg.norm(self.point_array_np[i] - point_i)
-            self.point_length_dict[i] = (point_i, length_along_cl) #point_id : (point_coords, length_along_centerline)
-
+            length_along_cl += np.linalg.norm(self.point_array_np[i+1] - point_i)
+            self.length_array.append(length_along_cl)
+            self.point_length_dict[i] =  length_along_cl #point_id : length_along_centerline
     
     def calculate_viscous_resistances(self):
-        self.viscous_resistances = []
+        self.viscous_resistances = [] #List for viscous resistances
         CONST_TERM = 8*self.dyn_viscosity/np.pi #The constant term in the viscous resistance equation
-
-        #self.point_array_np = None
-        #self.length_array_np = None
-
-        n_points = len(self.point_array_np)
-        
-        #Resistance contribution of the first centerline point
-        #The length (L) is half the distance from this point to the next
-        point_n1 = 0 #Point negative 1 (i-1) - Unused for now since there is no point -1
-        point_i = self.point_array_np[1] #The point this iteration is looking at - 1 for the start
-        print(point_i)
-        point_i1 = self.point_array_np[2] #The next point (i+1) - starts at 2
-        forward_L = np.linalg.norm(point_i1 - point_i)
-        L_i = forward_L/2 #The segment length for this centerline point
-        visc_res = CONST_TERM * L_i / (self.radius_array_np[1]**4) #The viscous resistance calculation for this centerline point
-        self.viscous_resistances.append(visc_res) #Appending to the viscous resistance list
-
-        #Updating the point values for the first iteration of the loop
-        point_n1 = point_i
-        point_i = point_i1
 
         #Resistance contribution of all the centerline points until and excluding the last point
         #The length (L) is half the distance from the last point to this point and half the distance from this point to the next
-        for i in range(2, n_points-2):
-            #The point at i-1 and i are already updated
-            #Updating point at i+1
-            point_i1 = self.point_array_np[i+1]
-
+        #Not using the first or last point since their radius values are a little funky and they are in the flow extension region anyways
+        for i in range(1, len(self.point_array_np)-2):
             #Calculate the distances between the points
-            back_L = np.linalg.norm(point_i - point_n1)
-            forward_L = np.linalg.norm(point_i1 - point_i)
+            back_L = self.length_array[i] - self.length_array[i-1]
+            forward_L = self.length_array[i+1] - self.length_array[i]
 
             #Calculate the length of the segment for this centerline point
             L_i = back_L/2 + forward_L/2
@@ -82,21 +59,11 @@ class LumpedParameter:
             visc_res = CONST_TERM * L_i / (self.radius_array_np[i] ** 4)
             self.viscous_resistances.append(visc_res)
 
-            #Updating the point values for the next iteration step
-            point_n1 = point_i
-            point_i = point_i1
-
-        #Dealing with the last point - Points are already updated
-        backward_L = np.linalg.norm(point_i - point_n1)
-        L_i = backward_L/2
-        visc_res = CONST_TERM * L_i / (self.radius_array_np[-2] ** 4)
-        self.viscous_resistances.append(visc_res)
-
     '''
-    Given the points, return a dictionary of the local minima
+    Given the points, return a dictionary of the local minima based on the areas
     '''
     def find_local_minima(self):
-        local_min_dict = {}
+        local_min_dict = {} #Point id : value
         
         return local_min_dict
 
@@ -105,13 +72,24 @@ class LumpedParameter:
         return local_max_dict
 
     def create_min_max_array(self):
-        min_max_array = [] #List of the local min, max, min, max, etc.
-        return min_max_array
+        minima_indices = argrelextrema(self.radius_array_np, np.less, order=3)[0] #Gets the inidices of the local minima - order = 3 means that 3 points on each side used for comparison to reduce noise
+        maxima_indices = argrelextrema(self.radius_array_np, np.greater, order=3)[0]
+        
+        more_minima = len(minima_indices) > len(maxima_indices) #Boolean variable - True if the minima array is longer, False if maxima array is longer
+        extrema_array = np.sort(np.concatenate(minima_indices, maxima_indices)) #List of the local min, max, min, max, etc. This works because they are always going to alternate min, max, etc. 
+        
+        return extrema_array, more_minima
 
     def calculate_expansion_resistances(self):
-        
+        extrema, more_minima = self.create_min_max_array()
+        exp_pdrop_dict = {} #Index : expansion pressure drop
+        if more_minima:
+            A_0 = 0 
+            A_s = extrema[0]    
+            delta_P = (self.rho * self.Kt/(2*A_0**2) * (A_0/A_s - 1) ** 2) * abs(self.flow_rate)
 
-        delta_P = (DENSITY * KT/(2*A_0**2) * (A_0/A_s - 1) ** 2) * abs(INLET_FLOW_RATE)
+        else:
+            pass
 
     def calculate_pressures(self):
         self.pressure_drops = [] #List of pressure drops due to resistances of each segment
@@ -146,15 +124,15 @@ class LumpedParameter:
         seg_points = np.arange(len(self.pressure_drops))
 
         # Pressure along vessel
-        ax1.plot(points, self.pressures, 'b-o', markersize=4)
-        ax1.set_xlabel("Centerline Point Index")
+        ax1.plot(self.length_array[1:-1], self.pressures, 'b-o', markersize=4)
+        ax1.set_xlabel("Length Along Centerline (mm)")
         ax1.set_ylabel("Pressure (Pa)")
         ax1.set_title("Pressure Along Vessel")
         ax1.grid(True)
 
         # Pressure drops at each segment
-        ax2.bar(seg_points[10:], self.pressure_drops[10:], color='red', alpha=0.7)
-        ax2.set_xlabel("Centerline Point Index")
+        ax2.bar(self.length_array[11:-1], self.pressure_drops[10:], color='red', alpha=0.7)
+        ax2.set_xlabel("Length Along Centerline (mm)")
         ax2.set_ylabel("Pressure Drop (Pa)")
         ax2.set_title("Pressure Drop at Each Point Along Vessel")
         ax2.grid(True, axis='y')
@@ -172,6 +150,7 @@ if __name__ == "__main__":
     DENSITY = 1.06 #g/mL or g/cm^3
 
     lp = LumpedParameter(cline_file=CLINE_FILE, Q=INLET_FLOW_RATE, rho=DENSITY, Kt=KT, mu=BLOOD_DYNAMIC_VISCOSITY)
+    
     lp.calculate_viscous_resistances()
     #lp.calculate_expansion_resistances()
     
