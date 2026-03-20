@@ -59,37 +59,44 @@ class LumpedParameter:
             visc_res = CONST_TERM * L_i / (self.radius_array_np[i] ** 4)
             self.viscous_resistances.append(visc_res)
 
-    '''
-    Given the points, return a dictionary of the local minima based on the areas
-    '''
-    def find_local_minima(self):
-        local_min_dict = {} #Point id : value
-        
-        return local_min_dict
-
-    def find_local_maxima(self):
-        local_max_dict = {} #Point id : value
-        return local_max_dict
-
     def create_min_max_array(self):
         minima_indices = argrelextrema(self.radius_array_np, np.less, order=3)[0] #Gets the inidices of the local minima - order = 3 means that 3 points on each side used for comparison to reduce noise
         maxima_indices = argrelextrema(self.radius_array_np, np.greater, order=3)[0]
         
-        more_minima = len(minima_indices) > len(maxima_indices) #Boolean variable - True if the minima array is longer, False if maxima array is longer
-        extrema_array = np.sort(np.concatenate(minima_indices, maxima_indices)) #List of the local min, max, min, max, etc. This works because they are always going to alternate min, max, etc. 
-        
-        return extrema_array, more_minima
+        start_min = minima_indices[0] < maxima_indices[0] #True if the index of the first minima is less than the index of the first maxima
+            
+        #return extrema_array, start_min
+        return minima_indices, maxima_indices, start_min
 
     def calculate_expansion_resistances(self):
-        extrema, more_minima = self.create_min_max_array()
-        exp_pdrop_dict = {} #Index : expansion pressure drop
-        if more_minima:
-            A_0 = 0 
-            A_s = extrema[0]    
+        # extrema, start_minima = self.create_min_max_array()
+        min_indices, max_indices, start_min = self.create_min_max_array()
+        extrema_array = np.sort(np.concatenate(min_indices, max_indices)) #List of the local min, max, min, max, etc. This works because they are always going to alternate min, max, etc. 
+        exp_pdrop_dict = {} #Empty for now - Eventually, Index : expansion pressure drop
+        num_extrema = len(min_indices) + len(max_indices)
+
+        if extrema_array[0] == min_indices[0]:
+            first = "min"
+        else:
+            first = "max"
+        
+        if extrema_array[-1] == min_indices[-1]:
+            last = "min"
+        else:
+            last = "max"
+
+        #If the first element is a maximum, no issues
+        #If it's a minimum 
+        if first == "min":
+            A_0 = extrema_array[0]
+            A_s = extrema_array[1]
             delta_P = (self.rho * self.Kt/(2*A_0**2) * (A_0/A_s - 1) ** 2) * abs(self.flow_rate)
 
-        else:
-            pass
+        for i in range(1, num_extrema-1, 2): #The first and last values aren't handled by the for loop
+            A_0 = 0
+            A_s = 0
+
+            
 
     def calculate_pressures(self):
         self.pressure_drops = [] #List of pressure drops due to resistances of each segment
