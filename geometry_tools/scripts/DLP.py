@@ -67,7 +67,7 @@ class LumpedParameter:
         
         return minima_indices, maxima_indices, start_min
 
-    def calculate_delta_P(self, A_s, A_0):
+    def calculate_added_resistance(self, A_s, A_0):
         try:
             return (self.density * self.Kt/(2*A_0**2) * (A_0/A_s - 1) ** 2) * abs(self.flow_rate)
         except Exception as e:
@@ -79,7 +79,7 @@ class LumpedParameter:
         min_indices, max_indices, start_min = self.create_min_max_array()
         extrema_array = np.sort(np.concatenate((min_indices, max_indices))) #List of the local min, max, min, max, etc. This works because they are always going to alternate min, max, etc. 
         pdrop_dict = {} #Empty for now - Eventually, Index : expansion pressure drop
-        expansion_pressure = 0.0
+        expansion_resistance = 0.0
         num_extrema = len(min_indices) + len(max_indices)
 
         if extrema_array[0] == min_indices[0]:
@@ -98,9 +98,9 @@ class LumpedParameter:
             A_0 = np.pi * self.radius_array_np[extrema_array[0]] ** 2
             A_s = np.pi * self.radius_array_np[extrema_array[1]] ** 2
 
-            delta_P = self.calculate_delta_P(A_s, A_0)
-            pdrop_dict[min_indices[i]] = delta_P
-            expansion_pressure += delta_P
+            delta_R = self.calculate_added_resistance(A_s, A_0)
+            pdrop_dict[min_indices[i]] = delta_R
+            expansion_resistance += delta_R
 
             #The first and last values aren't handled by the for loop
             for i in range(1, len(min_indices)-1):
@@ -108,9 +108,9 @@ class LumpedParameter:
                 A_s = np.pi * self.radius_array_np[min_indices[i]] ** 2
                 A_0 = np.pi * ((self.radius_array_np[extrema_array[extrema_i-1]] + self.radius_array_np[extrema_array[extrema_i+1]]) / 2) ** 2
                 
-                delta_P = self.calculate_delta_P(A_s, A_0)
-                pdrop_dict[min_indices[i]] = delta_P
-                expansion_pressure += delta_P
+                delta_R = self.calculate_added_resistance(A_s, A_0)
+                pdrop_dict[min_indices[i]] = delta_R
+                expansion_resistance += delta_R
             
             if last == "min":
                 A_s = np.pi * self.radius_array_np[extrema_array[-1]] ** 2
@@ -119,9 +119,9 @@ class LumpedParameter:
                 A_s = np.pi * self.radius_array_np[extrema_array[-2]] ** 2
                 A_0 = np.pi * ((self.radius_array_np[extrema_array[-3]] + self.radius_array_np[extrema_array[-1]]) / 2) ** 2
             
-            delta_P = self.calculate_delta_P(A_s, A_0)
-            pdrop_dict[min_indices[i]] = delta_P
-            expansion_pressure += delta_P
+            delta_R = self.calculate_added_resistance(A_s, A_0)
+            pdrop_dict[min_indices[i]] = delta_R
+            expansion_resistance += delta_R
         
         #The first element is a maxima
         else:
@@ -131,9 +131,9 @@ class LumpedParameter:
                 A_s = np.pi * self.radius_array_np[min_indices[i]] ** 2
                 A_0 = np.pi * ((self.radius_array_np[extrema_array[extrema_i-1]] + self.radius_array_np[extrema_array[extrema_i+1]]) / 2) ** 2
                 
-                delta_P = self.calculate_delta_P(A_s, A_0)
-                pdrop_dict[min_indices[i]] = delta_P
-                expansion_pressure += delta_P
+                delta_R = self.calculate_added_resistance(A_s, A_0)
+                pdrop_dict[min_indices[i]] = delta_R
+                expansion_resistance += delta_R
 
             if last == "min":
                 A_s = np.pi * self.radius_array_np[extrema_array[-1]] ** 2
@@ -142,39 +142,43 @@ class LumpedParameter:
                 A_s = np.pi * self.radius_array_np[extrema_array[-2]] ** 2
                 A_0 = np.pi * ((self.radius_array_np[extrema_array[-3]] + self.radius_array_np[extrema_array[-1]]) / 2) ** 2
             
-            delta_P = self.calculate_delta_P(A_s, A_0)
-            pdrop_dict[min_indices[-1]] = delta_P
-            expansion_pressure += delta_P
-        self.expansion_resistances = expansion_pressure #C: NAMING
+            delta_R = self.calculate_added_resistance(A_s, A_0)
+            pdrop_dict[min_indices[-1]] = delta_R
+            expansion_resistance += delta_R
+        self.expansion_resistances = expansion_resistance #C: NAMING
         self.p_drop_dict = pdrop_dict
-        print(expansion_pressure)
-        return expansion_pressure, pdrop_dict
+        print(expansion_resistance)
+        return expansion_resistance, pdrop_dict
     
     '''
     This function uses a different interpretation of the expansion terms and calculates the expansion resistance between every two points if the radius has decreased at a point compared to the last
+    Does not seem to be viable
     '''
     def calculate_expansion_resistances_v2(self):
         pdrop_dict = {} #C: This should be named something like "added_resistance_dict"
-        expansion_pressure = 0.0 #C: Expansion resistance total
+        expansion_resistance = 0.0 #C: Expansion resistance total
         radius_array = self.radius_array_np
         for i in range(1, len(radius_array)-10):
-            if radius_array[i] < radius_array[i-1] and radius_array[i] < radius_array[i+1]:
+            if radius_array[i] > radius_array[i-1]:
                 print(i)
                 A_s = np.pi * radius_array[i] ** 2
                 A_0 = np.pi * ((radius_array[i-1] + radius_array[i+1]) / 2) ** 2
-                delta_P = self.calculate_delta_P(A_s, A_0)
-                pdrop_dict[i] = delta_P
-                expansion_pressure += delta_P
+                delta_R = self.calculate_added_resistance(A_s, A_0)
+                pdrop_dict[i] = delta_R
+                expansion_resistance += delta_R
         
         # if radius_array[-1] < radius_array[-2]:
         #     A_s = np.pi * radius_array[-1] ** 2
         #     A_0 = np.pi * radius_array[-2] ** 2
-        #     delta_P = self.calculate_delta_P(A_s, A_0)
-        #     pdrop_dict[i] = delta_P
-        #     expansion_pressure += delta_P
-        self.expansion_resistances = expansion_pressure #C: NAMING
+        #     delta_R = self.calculate_delta_added_resistance(A_s, A_0)
+        #     pdrop_dict[i] = delta_R
+        #     expansion_pressure += delta_R
+        self.expansion_resistances = expansion_resistance #C: NAMING
         self.p_drop_dict = pdrop_dict
-        return expansion_pressure, pdrop_dict
+        return expansion_resistance, pdrop_dict
+
+    def calculate_curvature_resistances(self):
+        pass
 
 
     def calculate_pressures(self):
@@ -248,15 +252,15 @@ class LumpedParameter:
 
         plt.tight_layout()
         if exp_v == 1:
-            plt.savefig("pressure_results_vis_exp.png", dpi=150)
+            plt.savefig("../dlp_output_figures/pressure_results_vis_exp.png", dpi=150)
         elif exp_v == 2:
-            plt.savefig("pressure_results_vis_exp_v2.png", dpi=150)
+            plt.savefig("../dlp_output_figures/pressure_results_vis_exp_v2.png", dpi=150)
         else:
-            plt.savefig("pressure_results_vis.png", dpi=150)
+            plt.savefig("../dlp_output_figures/pressure_results_vis.png", dpi=150)
         plt.show()
 
     def debug(self, txt_file_name, desc):
-        text_lines = [f"{datetime.now().strftime('%H:%M:%S')}:\n"]
+        text_lines = []
         text_lines.append(f"Description: {desc}\n")
         if hasattr(self, "viscous_resistances"):
             v_res_sum = sum(self.viscous_resistances)
@@ -267,23 +271,28 @@ class LumpedParameter:
             text_lines.append(f"Pressure drop due to expansion losses: {self.expansion_resistances * self.flow_rate}\n")
 
         text_lines.append('\n')
+
         #Actually writing to the text file
         with open(txt_file_name, "a") as f:
             f.writelines(text_lines)
 
 if __name__ == "__main__":
     #CONSTANTS
-    BLOOD_DYNAMIC_VISCOSITY = 0.04 #dynamic viscosity mu value cP
-    CLINE_FILE = "/home/kabir/PT/PTSeg028_v3/PTSeg028_cl_centerline_graph_vmtk.vtp"
+    BLOOD_DYNAMIC_VISCOSITY = 0.04 #dynamic viscosity mu value [Poise]
     INLET_FLOW_RATE = 5.58 #mL/s - same as Back to Bernoulli paper
-    KT = 1.5 #Same as Back to Bernoulli paper
+    KT = 1.52 #Same as Mirramezani paper
     DENSITY = 1.06 #g/mL or g/cm^3
-    EXPANSION = 2 #0, 1, or 2
+
+    CLINE_FILE = "/home/kabir/PT/PTSeg028_v3/PTSeg028_cl_centerline_graph_vmtk.vtp"
+    EXPANSION = 1 #0, 1, or 2
+    DEBUG = True
 
     lp = LumpedParameter(cline_file=CLINE_FILE, Q=INLET_FLOW_RATE, rho=DENSITY, Kt=KT, mu=BLOOD_DYNAMIC_VISCOSITY)
     
+    #Calculating viscous resistance
     lp.calculate_viscous_resistances()
     
+    #Calculate expansion resistance if necessary
     if EXPANSION == 0:
         lp.calculate_pressures_no_exp()
     elif EXPANSION == 1:
@@ -293,9 +302,10 @@ if __name__ == "__main__":
         lp.calculate_expansion_resistances_v2()
         lp.calculate_pressures()
 
-    #Debug option
-    desc = f"EXPANSION = {EXPANSION}"
-    lp.debug(txt_file_name="debug_dlp.txt", desc=desc)
+    #Output to debug file if desired
+    if DEBUG:
+        desc = f"EXPANSION = {EXPANSION} \t->\t{datetime.now().strftime('%H:%M:%S')}"
+        lp.debug(txt_file_name="debug_dlp.txt", desc=desc)
 
     #lp.generate_viscous_resistance_plots()
     #lp.generate_expansion_resistance_plots()
