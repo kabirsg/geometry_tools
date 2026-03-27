@@ -78,7 +78,7 @@ class LumpedParameter:
         # extrema, start_minima = self.create_min_max_array()
         min_indices, max_indices, start_min = self.create_min_max_array()
         extrema_array = np.sort(np.concatenate((min_indices, max_indices))) #List of the local min, max, min, max, etc. This works because they are always going to alternate min, max, etc. 
-        pdrop_dict = {} #Empty for now - Eventually, Index : expansion pressure drop
+        exp_res_dict = {} #Empty for now - Eventually, Index : expansion pressure drop
         expansion_resistance = 0.0
         num_extrema = len(min_indices) + len(max_indices)
 
@@ -99,7 +99,7 @@ class LumpedParameter:
             A_s = np.pi * self.radius_array_np[extrema_array[1]] ** 2
 
             delta_R = self.calculate_added_resistance(A_s, A_0)
-            pdrop_dict[min_indices[i]] = delta_R
+            exp_res_dict[min_indices[i]] = delta_R
             expansion_resistance += delta_R
 
             #The first and last values aren't handled by the for loop
@@ -109,7 +109,7 @@ class LumpedParameter:
                 A_0 = np.pi * ((self.radius_array_np[extrema_array[extrema_i-1]] + self.radius_array_np[extrema_array[extrema_i+1]]) / 2) ** 2
                 
                 delta_R = self.calculate_added_resistance(A_s, A_0)
-                pdrop_dict[min_indices[i]] = delta_R
+                exp_res_dict[min_indices[i]] = delta_R
                 expansion_resistance += delta_R
             
             if last == "min":
@@ -120,19 +120,18 @@ class LumpedParameter:
                 A_0 = np.pi * ((self.radius_array_np[extrema_array[-3]] + self.radius_array_np[extrema_array[-1]]) / 2) ** 2
             
             delta_R = self.calculate_added_resistance(A_s, A_0)
-            pdrop_dict[min_indices[i]] = delta_R
+            exp_res_dict[min_indices[i]] = delta_R
             expansion_resistance += delta_R
         
         #The first element is a maxima
         else:
             for i in range(0, len(min_indices)-1):
-                print(min_indices[i])
                 extrema_i = np.where(extrema_array == min_indices[i])[0][0]
                 A_s = np.pi * self.radius_array_np[min_indices[i]] ** 2
                 A_0 = np.pi * ((self.radius_array_np[extrema_array[extrema_i-1]] + self.radius_array_np[extrema_array[extrema_i+1]]) / 2) ** 2
                 
                 delta_R = self.calculate_added_resistance(A_s, A_0)
-                pdrop_dict[min_indices[i]] = delta_R
+                exp_res_dict[min_indices[i]] = delta_R
                 expansion_resistance += delta_R
 
             if last == "min":
@@ -143,19 +142,19 @@ class LumpedParameter:
                 A_0 = np.pi * ((self.radius_array_np[extrema_array[-3]] + self.radius_array_np[extrema_array[-1]]) / 2) ** 2
             
             delta_R = self.calculate_added_resistance(A_s, A_0)
-            pdrop_dict[min_indices[-1]] = delta_R
+            exp_res_dict[min_indices[-1]] = delta_R
             expansion_resistance += delta_R
         self.expansion_resistances = expansion_resistance #C: NAMING
-        self.p_drop_dict = pdrop_dict
-        print(expansion_resistance)
-        return expansion_resistance, pdrop_dict
+        self.exp_res_dict = exp_res_dict
+        #print(expansion_resistance)
+        return expansion_resistance, exp_res_dict
     
     '''
     This function uses a different interpretation of the expansion terms and calculates the expansion resistance between every two points if the radius has decreased at a point compared to the last
     Does not seem to be viable
     '''
     def calculate_expansion_resistances_v2(self):
-        pdrop_dict = {} #C: This should be named something like "added_resistance_dict"
+        exp_res_dict = {} #C: This should be named something like "added_resistance_dict"
         expansion_resistance = 0.0 #C: Expansion resistance total
         radius_array = self.radius_array_np
         for i in range(1, len(radius_array)-10):
@@ -164,18 +163,18 @@ class LumpedParameter:
                 A_s = np.pi * radius_array[i] ** 2
                 A_0 = np.pi * ((radius_array[i-1] + radius_array[i+1]) / 2) ** 2
                 delta_R = self.calculate_added_resistance(A_s, A_0)
-                pdrop_dict[i] = delta_R
+                exp_res_dict[i] = delta_R
                 expansion_resistance += delta_R
         
         # if radius_array[-1] < radius_array[-2]:
         #     A_s = np.pi * radius_array[-1] ** 2
         #     A_0 = np.pi * radius_array[-2] ** 2
         #     delta_R = self.calculate_delta_added_resistance(A_s, A_0)
-        #     pdrop_dict[i] = delta_R
+        #     exp_res_dict[i] = delta_R
         #     expansion_pressure += delta_R
-        self.expansion_resistances = expansion_resistance #C: NAMING
-        self.p_drop_dict = pdrop_dict
-        return expansion_resistance, pdrop_dict
+        self.expansion_resistance = expansion_resistance 
+        self.exp_res_dict = exp_res_dict
+        return expansion_resistance, exp_res_dict
 
     def calculate_curvature_resistances(self):
         pass
@@ -185,11 +184,13 @@ class LumpedParameter:
         self.pressure_drops = [] #List of pressure drops due to resistances of each segment
         self.pressures = [] #List of pressures at each point
         # Inlet flow rate * total resistance = inlet pressure (assuming pressure at outlet = 0 -> think of this as the difference in pressure between inlet and outlet)
-        total_r = sum(self.viscous_resistances) + self.expansion_resistances #C: THIS WILL HAVE TO CHANGE LATER TO BE THE TOTAL RESISTANCES
+        total_r = sum(self.viscous_resistances) + self.expansion_resistances
         pressure = total_r * self.flow_rate #inlet pressure
-        resistances = self.viscous_resistances #C: THIS WILL HAVE TO CHANGE LATER TO BE THE TOTAL RESISTANCES
-        for key, val in self.p_drop_dict.items():
-            resistances[key] += val
+        
+        #Calculating Total resistance
+        resistances = self.viscous_resistances.copy() #Viscous resistance term 
+        for key, val in self.exp_res_dict.items():
+            resistances[key] += val #Adding expansion resistance
 
         for resistance in resistances:
             delta_P = self.flow_rate * resistance #Pressure drop over each segment due to the resistive elements in that segment
@@ -229,15 +230,12 @@ class LumpedParameter:
 
         ax.plot(self.expansion_resistances)
 
-    def generate_pressure_plots(self, exp_v):
+    def generate_pressure_plots(self, path_name, exp_v):
 
         fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10,8))
 
-        points = np.arange(len(self.pressures))
-        seg_points = np.arange(len(self.pressure_drops))
-
         # Pressure along vessel
-        ax1.plot(self.length_array[1:-1], self.pressures, 'b-o', markersize=4)
+        ax1.plot(self.length_array[11:-1], self.pressures[10:], 'b-o', markersize=4)
         ax1.set_xlabel("Length Along Centerline (mm)")
         ax1.set_ylabel("Pressure (Pa)")
         ax1.set_title("Pressure Along Vessel")
@@ -252,16 +250,16 @@ class LumpedParameter:
 
         plt.tight_layout()
         if exp_v == 1:
-            plt.savefig("../dlp_output_figures/pressure_results_vis_exp.png", dpi=150)
+            plt.savefig(f"{path_name}/pressure_results_vis_exp.png", dpi=150)
         elif exp_v == 2:
-            plt.savefig("../dlp_output_figures/pressure_results_vis_exp_v2.png", dpi=150)
+            plt.savefig(f"{path_name}/pressure_results_vis_exp_v2.png", dpi=150)
         else:
-            plt.savefig("../dlp_output_figures/pressure_results_vis.png", dpi=150)
+            plt.savefig(f"{path_name}/pressure_results_vis.png", dpi=150)
         plt.show()
 
     def debug(self, txt_file_name, desc):
         text_lines = []
-        text_lines.append(f"Description: {desc}\n")
+        text_lines.append(f"\nDescription: {desc}\n")
         if hasattr(self, "viscous_resistances"):
             v_res_sum = sum(self.viscous_resistances)
             text_lines.append(f"Viscous Total Resistance: {v_res_sum}\n")
@@ -273,6 +271,8 @@ class LumpedParameter:
         text_lines.append('\n')
 
         #Actually writing to the text file
+        folder = Path(txt_file_name).parent
+        folder.mkdir(parents=True, exist_ok=True) #Creates the folder if it doesn't exist already
         with open(txt_file_name, "a") as f:
             f.writelines(text_lines)
 
@@ -283,11 +283,14 @@ if __name__ == "__main__":
     KT = 1.52 #Same as Mirramezani paper
     DENSITY = 1.06 #g/mL or g/cm^3
 
-    CLINE_FILE = "/home/kabir/PT/PTSeg028_v3/PTSeg028_cl_centerline_graph_vmtk.vtp"
-    EXPANSION = 1 #0, 1, or 2
+    CLINE_FILE_PATH = "/home/kabir/PT/PTSeg028_v3/PTSeg028_cl_centerline_graph_vmtk.vtp"
+    EXPANSION = 0 #0, 1, or 2
+    FIGURE_SAVE_FOLDER = "../dlp_output" #Path to folder where the figures should be saved
+    
     DEBUG = True
+    DEBUG_FILE_PATH = "../dlp_output/debug_dlp.txt" #Won't be used if the DEBUG flag is set to true
 
-    lp = LumpedParameter(cline_file=CLINE_FILE, Q=INLET_FLOW_RATE, rho=DENSITY, Kt=KT, mu=BLOOD_DYNAMIC_VISCOSITY)
+    lp = LumpedParameter(cline_file=CLINE_FILE_PATH, Q=INLET_FLOW_RATE, rho=DENSITY, Kt=KT, mu=BLOOD_DYNAMIC_VISCOSITY)
     
     #Calculating viscous resistance
     lp.calculate_viscous_resistances()
@@ -304,9 +307,7 @@ if __name__ == "__main__":
 
     #Output to debug file if desired
     if DEBUG:
-        desc = f"EXPANSION = {EXPANSION} \t->\t{datetime.now().strftime('%H:%M:%S')}"
-        lp.debug(txt_file_name="debug_dlp.txt", desc=desc)
-
-    #lp.generate_viscous_resistance_plots()
-    #lp.generate_expansion_resistance_plots()
-    lp.generate_pressure_plots(EXPANSION)
+        desc = f"{datetime.now().strftime('%H:%M:%S')}\t->\tEXPANSION = {EXPANSION}"
+        lp.debug(txt_file_name=DEBUG_FILE_PATH, desc=desc)
+    
+    lp.generate_pressure_plots(FIGURE_SAVE_FOLDER, EXPANSION)
