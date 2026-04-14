@@ -62,8 +62,7 @@ class LumpedParameter:
         length_along_cl = 0 #The distance along the centerline will be calculated as a sum of the distances between all the points along the centerline
         #Not including the first or last point - messes it up for some reason
         for i in range(1, len(self.point_array_np)-1):
-            point_i = self.point_array_np[i] #Returns the [X Y Z] coordinates for the centerline point
-            length_along_cl += np.linalg.norm(self.point_array_np[i+1] - point_i) #Adding the length along the centerline (assuming already in cm)
+            length_along_cl += (np.linalg.norm(self.point_array_np[i+1] - self.point_array_np[i]))/10 #Adding the length along the centerline, adjusting for units: mm -> cm
             self.length_array.append(length_along_cl)
     
     '''
@@ -484,7 +483,7 @@ if __name__ == "__main__":
     REYNOLDS_NUMBER = 300 #Reynold's number for cerebral venous system - 300 is a placeholder value for now
 
     CLINE_FILE_PATH = "/home/kabir/PT/PTSeg028_v3/PTSeg028_cl_centerline_graph_vmtk.vtp"
-    EXPANSION = 2 #0 (no expansion), 1(exp res all at one point), 2(exp res applied linearly), or 3(exp res applied proportional to diameter)
+    EXPANSION = 0 #0 (no expansion), 1(exp res all at one point), 2(exp res applied linearly), or 3(exp res applied proportional to diameter)
     CURVATURE = 1 #0 - no curvature resistance term added, 1 - curvature resistance term added
     FIGURE_SAVE_FOLDER = "../dlp_output" #Path to folder where the figures should be saved
     
