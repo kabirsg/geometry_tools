@@ -45,15 +45,16 @@ def define_fr(obj_pt, flowrate=5.578888889):
 
 def mapped_info(prep_dir, sss, ss, split_flow, lab, fen, syl, emissary, condylar):
     out_dir = prep_dir.parent
+    dec = str(int(round(float(sss) - int(float(sss)), 1)*10))
     #surf0_file = sorted(prep_dir.glob('*_noext.vtp'))[0]
     surf_file = sorted(prep_dir.glob('*_cl.vtp'))[0]
     remeshed_file = out_dir/(surf_file.stem  +'_remeshed.vtp')
     cent_graph_file = out_dir/(surf_file.stem  +'_graph.vtp')
     cent_graph_vmtk = out_dir/out_dir/(surf_file.stem +'_centerline_graph_vmtk.vtp')
-    cent_file = out_dir/(surf_file.stem + '_' + sss + '_centerline_mapped.vtp')
+    cent_file = out_dir/(surf_file.stem + '__' + str(int(float(sss))) + 'p' + dec + 'centerline_mapped.vtp')
     #newcent_file = out_dir/(surf_file.stem + '_centerline_cm.vtp')
-    mapped_file = out_dir/(surf_file.stem + '_mapped_' + sss + '.vtp')
-    planes_files = out_dir/(surf_file.stem + '_planes_' + sss + '.vtm')
+    mapped_file = out_dir/(surf_file.stem + '_' + str(int(float(sss))) + 'p' + dec + '_mappedsys.vtp')
+    planes_files = out_dir/(surf_file.stem + '_planes_' + str(int(float(sss))) + 'p' + dec + '.vtm')
     if not mapped_file.exists():
         #surf = pv.read(surf0_file) #use unprepped surface for the centerline map
         if not remeshed_file.exists(): #use remeshed surface for the centerline map
