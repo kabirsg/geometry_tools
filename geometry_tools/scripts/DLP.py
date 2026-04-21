@@ -246,7 +246,6 @@ class LumpedParameter:
         if len(next_max) == 0:
             #If there is no downstream maximum - apply entirely at the minimum point
             resistances[key] += val
-            #self.viscous_resistances[key] += val
             return resistances
         
         next_max_idx = next_max[0]
@@ -256,13 +255,12 @@ class LumpedParameter:
 
         #Equal share per point
         r_per_point = val / len(region_indices)
-
         for idx in region_indices:
             #viscous resistances is offset by 1 (starts at centerline point 1)
             res_idx = idx - 1
             if 0 <= res_idx < len(self.viscous_resistances):
                 # self.viscous_resistances[res_idx] += r_per_point
-                resistances[key] += r_per_point
+                resistances[res_idx] += r_per_point
         
         return resistances
 
@@ -283,8 +281,7 @@ class LumpedParameter:
         #Find the next maximum after this local minimum
         next_max = max_indices[max_indices > key]
         if len(next_max) == 0:
-            #self.viscous_resistances[key] += val
-            resistances += val
+            resistances[key] += val
             return resistances
         
         next_max_idx = next_max[0]
@@ -309,14 +306,12 @@ class LumpedParameter:
                 res_idx = idx - 1
                 if 0 <= res_idx < len(self.viscous_resistances):
                     resistances[res_idx] += r_per_point
-                    # self.viscous_resistances[res_idx] += r_per_point
             
         else:
             for idx, w in zip(region_indices, weights):
                 res_idx = idx - 1
                 if 0 <= res_idx < len(self.viscous_resistances):
                     resistances[res_idx] += val * (w/total_weight)
-                    # self.viscous_resistances[res_idx] += val * (w/total_weight)
         
         return resistances
     '''
@@ -434,12 +429,12 @@ class LumpedParameter:
         text_lines = []
         text_lines.append(f"\nDescription: {desc}\n")
         if hasattr(self, "viscous_resistances"):
-            v_res_sum = sum(self.viscous_resistances)
+            v_res_sum = sum(self.viscous_resistances)/1333.2
             text_lines.append(f"Viscous Total Resistance (+Curvature if CURVATURE = 1): {v_res_sum}\n")
             text_lines.append(f"Pressure drop due to viscous losses: {v_res_sum * self.flow_rate}\n")
         if hasattr(self, "expansion_resistances"):
-            text_lines.append(f"Expansion Total Resistance: {self.expansion_resistances}\n")
-            text_lines.append(f"Pressure drop due to expansion losses: {self.expansion_resistances * self.flow_rate}\n")
+            text_lines.append(f"Expansion Total Resistance: {self.expansion_resistances/1333.2}\n")
+            text_lines.append(f"Pressure drop due to expansion losses: {self.expansion_resistances * self.flow_rate / 1333.2}\n")
 
         text_lines.append('\n')
 
@@ -482,8 +477,12 @@ if __name__ == "__main__":
     DENSITY = 1.06 #g/mL or g/cm^3
     REYNOLDS_NUMBER = 300 #Reynold's number for cerebral venous system - 300 is a placeholder value for now
 
-    CLINE_FILE_PATH = "/home/kabir/PT/PTSeg028_v3/PTSeg028_cl_centerline_graph_vmtk.vtp"
-    EXPANSION = 0 #0 (no expansion), 1(exp res all at one point), 2(exp res applied linearly), or 3(exp res applied proportional to diameter)
+    #For WSL:
+    # CLINE_FILE_PATH = "/home/kabir/PT/PTSeg028_v3/PTSeg028_cl_centerline_graph_vmtk.vtp"
+    
+    #For Linux:
+    CLINE_FILE_PATH = "/home/kabir/Documents/PT/PTSeg028/PTSeg028_cl_centerline_graph_vmtk.vtp"
+    EXPANSION = 2 #0 (no expansion), 1(exp res all at one point), 2(exp res applied linearly), or 3(exp res applied proportional to diameter)
     CURVATURE = 1 #0 - no curvature resistance term added, 1 - curvature resistance term added
     FIGURE_SAVE_FOLDER = "../dlp_output" #Path to folder where the figures should be saved
     
