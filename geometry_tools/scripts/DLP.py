@@ -65,15 +65,22 @@ class LumpedParameter:
             length_along_cl += (np.linalg.norm(self.point_array_np[i+1] - self.point_array_np[i]))/10 #Adding the length along the centerline, adjusting for units: mm -> cm
             self.length_array.append(length_along_cl)
     
+    def calculate_unsteady_term(self, rad):
+        return rad * np.sqrt(self.density / self.dyn_viscosity)
+
     '''
     Calculating the viscous resistance term
     
     As per the Mirramezani et al. (2020) paper the viscous resistance term is defined as (8*mu/pi) * INT_0_L(1/(R(x)^4) dx)
-    As the curvature resistant term gets added, the value of the curvature multiplier (delta) is defined as: 0.1033*sqrt(K)*((1 + (1.729/K)^0.5) - (1.315/sqrt(K)))^-3 for every point:
-    However, if this calculated value for delta is less than 1 (which is the case for a lot of our cases with a low Reynold's number), it is set to 1
+
+    This value is multiplied by the maximum between gamma and zeta with gamma being resistances from curvature effects and zeta being resistances from unsteady effects
+
+    The value of the curvature multiplier (gamma) is defined as: 0.1033*sqrt(K)*((1 + (1.729/K)^0.5) - (1.315/sqrt(K)))^-3 for every point
+    The value of the unsteady multiplier (zeta) is defined as the Womersley number: zeta = alpha = R * sqrt(rho * frequency / mu) with frequency = 1
+    
     This makes the final viscous resistance that is used for the calculation to be the following
     
-    Final Viscous Resistance calculation: R_v = (8*mu/pi) * INT_0_L(max{delta, 1} * 1/(R(x)^4) dx)
+    Final Viscous Resistance calculation: R_v = (8*mu/pi) * INT_0_L(max{gamma, zeta} * 1/(R(x)^4) dx)
 
     Units: Q = mL/s (cm^3/s), L = cm, R = cm, K = -, a = 1/cm, R_v = g/(s*cm^4)
 
@@ -97,19 +104,19 @@ class LumpedParameter:
             #Getting the radius at this point
             rad = self.radius_array_np[i]
 
-            #Calculating curvature resistance if needed
-            if self.curvature == 1:
-                curv = self.curvature_array_np[i]
-
-                #Calculate the terms for the curvature resistance
-                K_i = self.reynolds * np.sqrt(rad / curv)
-                curve_res_i = 0.1033 * np.sqrt(K_i) * ((1+(1.729 / K_i)) ** 0.5 - (1.315 - np.sqrt(K_i))) ** -3 #Multiplier to add the curvature resistance term
-                curve_res_i = max(curve_res_i, 1) #Cannot reduce below Poiseuille resistance value. If < 1, set to 1
-            else:
-                curve_res_i = 1
+            #Calculating the unsteady term - zeta
+            unsteady_term = rad * np.sqrt(self.density / self.dyn_viscosity)
+            
+            #Calculating the curvature term - gamma
+            curv = self.curvature_array_np[i]
+            K_i = self.reynolds * np.sqrt(rad / curv)
+            curve_res_i = 0.1033 * np.sqrt(K_i) * ((1+(1.729 / K_i)) ** 0.5 - (1.315 - np.sqrt(K_i))) ** -3 #Multiplier to add the curvature resistance term
+            
+            #The viscous resistance "multiplier" is the maximum of gamma and zeta
+            multiplier = max(curve_res_i, unsteady_term)
 
             #Calculate the viscous resistance at this centerline point
-            visc_res = (CONST_TERM * L_i * curve_res_i) / (rad ** 4)
+            visc_res = (CONST_TERM * L_i * multiplier) / (rad ** 4)
             self.viscous_resistances.append(visc_res)
 
     '''
@@ -145,7 +152,7 @@ class LumpedParameter:
     '''
     def calculate_added_resistance(self, A_s, A_0):
         try:
-            return (self.density * self.Kt/(2*A_0**2) * (A_0/A_s - 1) ** 2) * abs(self.flow_rate)
+            return ((self.density * self.Kt/(2*(A_0**2))) * ((A_0/A_s) - 1) ** 2) * abs(self.flow_rate)
         except Exception as e:
             print(f'Exception encountered: {e}')
             return 0
@@ -185,7 +192,6 @@ class LumpedParameter:
             for i in range(1, len(min_indices)-1):
                 extrema_i = np.where(extrema_array == min_indices[i])[0][0]
                 A_s = np.pi * self.radius_array_np[min_indices[i]] ** 2
-                A_0 = ((np.pi * self.radius_array_np[extrema_array[extrema_i-1]] ** 2) + (np.pi * self.radius_array_np[extrema_array[extrema_i+1]] ** 2)) / 2
                 A_0 = np.pi * ((self.radius_array_np[extrema_array[extrema_i-1]] + self.radius_array_np[extrema_array[extrema_i+1]]) / 2) ** 2
                 
                 delta_R = self.calculate_added_resistance(A_s, A_0)
@@ -229,7 +235,8 @@ class LumpedParameter:
         self.exp_res_dict = exp_res_dict
 
     '''
-    Linearly adding the expansion resistance from the start of the expansion region (local minimum) to the end (downstream local maximum)
+    Linearly adding the expansion resistance from the start of the expansion region (local minimum) 
+    to the end (downstream local maximum)
 
     Parameters:
         - key: The id of the local minimum (index in lists)
@@ -266,7 +273,7 @@ class LumpedParameter:
 
     '''
     Adding expansion resistance in the expansion resistance (from the local minimum to the downstream local maximum) 
-    proportional to the diameter at each point.
+    proportional to the radius at each point.
 
     Parameters:
         - key: The id of the local minimum (index in lists)
@@ -287,7 +294,7 @@ class LumpedParameter:
         next_max_idx = next_max[0]
         region_indices = list(range(key, next_max_idx + 1))
 
-        #Compute diameter increase at each step in the region
+        #Compute radius increase at each step in the region
         #Weight at point i = max(0, r[i] - r[i-1]), ie. only where expanding
         weights = []
         for idx in region_indices:
@@ -314,6 +321,45 @@ class LumpedParameter:
                     resistances[res_idx] += val * (w/total_weight)
         
         return resistances
+    
+    def add_proportional_to_area_expansion_resisance(self, key, val, resistances, max_indices):
+        #Find the next maximum after this local minimum
+        next_max = max_indices[max_indices > key]
+        if len(next_max) == 0:
+            resistances[key] += val
+            return resistances
+        
+        next_max_idx = next_max[0]
+        region_indices = list(range(key, next_max_idx + 1))
+
+        #Compute area increase at each step in the region
+        #Weight at point i = max(0, a[i] - a[i-1]), ie. only where expanding
+        weights = []
+        for idx in region_indices:
+            if idx == key:
+                weights.append(0.0)
+            else:
+                delta_a = np.pi * (self.radius_array_np[idx] ** 2) - np.pi * (self.radius_array_np[idx - 1] ** 2)
+                weights.append(max(0.0, delta_a)) #Only positive growth counts
+        
+        total_weight = sum(weights)
+
+        if total_weight == 0:
+            #Flat or contraction region - fall back to equal distribution
+            r_per_point = val / len(region_indices)
+            for idx in region_indices:
+                res_idx = idx - 1
+                if 0 <= res_idx < len(self.viscous_resistances):
+                    resistances[res_idx] += r_per_point
+            
+        else:
+            for idx, w in zip(region_indices, weights):
+                res_idx = idx - 1
+                if 0 <= res_idx < len(self.viscous_resistances):
+                    resistances[res_idx] += val * (w/total_weight)
+        
+        return resistances
+
     '''
     Calculating the pressure drop at every point from the calculated resistance values
 
@@ -324,14 +370,10 @@ class LumpedParameter:
     def calculate_pressures(self):
         self.pressure_drops_mmHg = [] #List of pressure drops due to resistances of each segment
         self.pressures_mmHg = [] #List of pressures at each point
-        # Inlet flow rate * total resistance = inlet pressure (assuming pressure at outlet = 0 -> think of this as the difference in pressure between inlet and outlet)
-        total_r = sum(self.viscous_resistances) + self.expansion_resistances
-        pressure = total_r * self.flow_rate #inlet pressure
-        pressure_mmHg = pressure / 1333.22
-        
+
         #Calculating Total resistance
         resistances = self.viscous_resistances.copy() #Viscous resistance term
-        if self.expansion == 2 or self.expansion == 3:
+        if self.expansion == 2 or self.expansion == 3 or self.expansion == 4:
             _, max_indices, _ = self.create_min_max_array()
         #Adding expansion resistance
         for key, val in self.exp_res_dict.items():
@@ -342,9 +384,12 @@ class LumpedParameter:
                 resistances = self.add_linear_expansion_resistance(key, val, resistances, max_indices) #This doesn't return anything that is added to resistances. This won't work.
             elif self.expansion == 3:
                 resistances = self.add_proportional_expansion_resistance(key, val, resistances, max_indices)
+            elif self.expansion == 4:
+                resistances = self.add_proportional_to_area_expansion_resisance(key, val, resistances, max_indices)
             else:
-                raise ValueError(f"EXPANSION flag must be set to a value between 0 and 3 inclusive. Not {self.expansion}")
+                raise ValueError(f"EXPANSION flag must be set to a value between 0 and 4 inclusive. Not {self.expansion}")
 
+        pressure_mmHg = self.flow_rate * resistances[0] / 1333.2
         for resistance in resistances:
             delta_P = self.flow_rate * resistance #Pressure drop over each segment due to the resistive elements in that segment
             delta_P_mmHg = delta_P / 1333.22
@@ -367,12 +412,9 @@ class LumpedParameter:
     def calculate_pressures_no_exp(self):
         self.pressure_drops_mmHg = [] #List of pressure drops due to resistances of each segment in mmHg
         self.pressures_mmHg = [] #List of pressures at each point in mmHg
-        # Inlet flow rate * total resistance = inlet pressure (assuming pressure at outlet = 0 -> think of this as the difference in pressure between inlet and outlet)
-        total_r = sum(self.viscous_resistances)
-        pressure = total_r * self.flow_rate #inlet pressure in dyn/cm^2
-        pressure_mmHg = pressure / 1333.2
-        resistances = self.viscous_resistances
+        pressure_mmHg = 0
 
+        resistances = self.viscous_resistances
         for resistance in resistances:
             delta_P = self.flow_rate * resistance #Pressure drop over each segment due to the resistive elements in that segment (dyn/cm^2)
             delta_P_mmHg = delta_P / 1333.2 #Pressure drop over each segment in mmHg
@@ -413,6 +455,13 @@ class LumpedParameter:
         ax1.set_ylabel("Pressure (mmHg)")
         ax1.set_title("Pressure Along Vessel")
         ax1.grid(True)
+        ax1.text(
+            0.02, 0.05,
+            f"Value 1: {max(self.pressures_mmHg):.2f}\nValue 2: {min(self.pressures_mmHg):.4f}",
+            transform=ax1.transAxes,
+            verticalalignment='bottom',
+            bbox=dict(boxstyle='round', facecolor='white', alpha=0.8)
+        )
 
         # Pressure drops at each segment
         ax2.bar(x, self.pressure_drops_mmHg[10:], color=colours_2, alpha=0.3)
@@ -478,11 +527,11 @@ if __name__ == "__main__":
     REYNOLDS_NUMBER = 300 #Reynold's number for cerebral venous system - 300 is a placeholder value for now
 
     #For WSL:
-    # CLINE_FILE_PATH = "/home/kabir/PT/PTSeg028_v3/PTSeg028_cl_centerline_graph_vmtk.vtp"
-    
+    CLINE_FILE_PATH = "/home/kabir/masters_files/PT/PTSeg028_v3/PTSeg028_cl_centerline_graph_vmtk.vtp"
     #For Linux:
-    CLINE_FILE_PATH = "/home/kabir/Documents/PT/PTSeg028/PTSeg028_cl_centerline_graph_vmtk.vtp"
-    EXPANSION = 2 #0 (no expansion), 1(exp res all at one point), 2(exp res applied linearly), or 3(exp res applied proportional to diameter)
+    # CLINE_FILE_PATH = "/home/kabir/Documents/PT/PTSeg028/PTSeg028_cl_centerline_graph_vmtk.vtp"
+    
+    EXPANSION = 2 #0 (no expansion), 1(exp res all at one point), 2(exp res applied linearly), 3(exp res applied proportional to radius), 4(exp res applied proportional to area)
     CURVATURE = 1 #0 - no curvature resistance term added, 1 - curvature resistance term added
     FIGURE_SAVE_FOLDER = "../dlp_output" #Path to folder where the figures should be saved
     
