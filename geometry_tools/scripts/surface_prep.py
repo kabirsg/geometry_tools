@@ -19,7 +19,12 @@ from geometry_tools import common as cc
 from geometry_tools import vmtk_wrapper as vmtk
 import time
 from datetime import timedelta
-import sys 
+import sys
+try:
+    import config
+    config_bool = True
+except:
+    config_bool = False
 
 def surface_prep(surf_file, proj_dir, surf_type):
     """ Basic surface prep.
@@ -30,13 +35,13 @@ def surface_prep(surf_file, proj_dir, surf_type):
         proj_dir.mkdir()
     
     # Output files
-    surf_file_out = proj_dir / (surf_file.stem + '_cl.vtp')
-    clipped_surf = proj_dir / (surf_file.stem + '_noext.vtp')
+    surf_file_out = proj_dir / (surf_file.stem + '_cl.vtp') #Name of the clipped surface with flow extensions
+    clipped_surf = proj_dir / (surf_file.stem + '_noext.vtp') #Name of the clipped surface without flow extensions
     if surf_type=='a':
         neck_file_out = proj_dir / (surf_file.stem + '_cl_neckpoints.vtm')
     #else:
         #we may want to choose some points to identify some important pt features (eg torcula)
-    points_file_out = proj_dir / (surf_file.stem + '_cl_endpoints.vtm') #Multiblock object
+    points_file_out = proj_dir / (surf_file.stem + '_cl_endpoints.vtm') #Multiblock object - file containing the two endpoints for the inlet and outlet
 
     if not surf_file_out.exists():
         case_start = time.time()
@@ -94,10 +99,16 @@ def surface_prep(surf_file, proj_dir, surf_type):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) == 1: 
-        surf_file = "/home/kabir/PT/PTSeg106_v8/PTSeg106_base_0p64.stl"
-        proj_dir = "/home/kabir/PT/PTSeg106_v8/PTSeg106_clip"
-        surf_type = 'pt' #options: a or pt
+    if len(sys.argv) == 1:
+        #Using the config.py file paths if they are available
+        if config_bool:
+            surf_file = config.sp_surf_file
+            proj_dir = config.sp_proj_dir
+            surf_type = config.sp_surf_type
+        else:
+            surf_file = "/home/kabir/masters_files/DLP/Gurnish_CaseC_PTSeg106/Case_C_Gurnish.stl"
+            proj_dir = "/home/kabir/masters_files/DLP/Gurnish_CaseC_PTSeg106/Case_C_clipped"
+            surf_type = 'pt' #options: a or pt
     else:
         surf_file = sys.argv[1]
         proj_dir = sys.argv[2]
