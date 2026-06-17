@@ -697,8 +697,14 @@ def MeshQualityMeasures(title, polyDataVolMesh, outputfilename = '',
 
 if __name__ == "__main__":
         surface_check_only = False
-
-        fileName = sys.argv[1]
+        try:
+            import config
+            fileName = config.mq_file_name
+            print(f"Using file name from config file: {fileName}")
+        except Exception as e:
+            print(f"ERROR: {e}")
+            print("Defaulting to default usage")
+            fileName = sys.argv[1]
         ## Load the given file, and pass the vtkPolyData object
         fileType = fileName[-3:]
         if fileType == '':
@@ -719,7 +725,7 @@ if __name__ == "__main__":
         reader.Update()
         polyData = reader.GetOutput()
 
-        outputfilename = os.path.splitext(sys.argv[1])[0]+'_mesh_quality.txt'
+        outputfilename = os.path.splitext(fileName)[0]+'_mesh_quality.txt'
 
         if MeshQualityMeasures(fileName, polyData, outputfilename, surface_check_only, False) < 0:
             print ('NOT a good mesh! Be careful.')

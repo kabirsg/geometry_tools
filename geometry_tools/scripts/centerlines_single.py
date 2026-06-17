@@ -29,6 +29,15 @@ def make_cl(proj_dir, case_name):
     m.centerlines.save('{}_centerline_single.vtp'.format(case_name))
 
 if __name__ == "__main__":
-    proj_dir = Path(sys.argv[1])
-    case_name = sys.argv[2] 
+    if len(sys.argv) == 1:
+        try:
+            import config
+            print("Found config.py file - Trying to use config parameters")
+            proj_dir = Path(config.cs_proj_dir)
+            case_name = config.cs_case_name
+        except Exception as e:
+            print(f"ERROR: {e}\nPlease ensure that the config file is present and the required variables are in it")
+    else:
+        proj_dir = Path(sys.argv[1])
+        case_name = sys.argv[2] 
     make_cl(proj_dir=proj_dir, case_name=case_name)

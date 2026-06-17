@@ -94,18 +94,33 @@ def print_next_step():
     print("Command: map_info_direct.py [path/to/clipped/folder] [flowrate_at_inlet_1] [flowrate_at_inlet_2] False False False False False")
 
 if __name__ == "__main__":
-    if len(sys.argv) == 1: 
-        prep_dir = Path("/home/kabir/PT/PTSeg106_raw/PTSeg106_clip")
-        case_name = "PTSeg106_v2"
+    if len(sys.argv) == 1:
+        try:
+            import config
+            prep_dir = Path(config.cf_prep_dir)
+            print(f"Using the settings outlined in the config.py file. Prep Directory: {prep_dir}")
+            case_name = config.cf_case_name
+            edge_length = config.cf_edge_length
+            iters = config.cf_iters
+            ratio = config.cf_ratio
+            resample_step_length = config.cf_resample_step_length
+        except:
+            prep_dir = Path("")
+            case_name = ""
+            edge_length = 0.4 #Edge length of the remeshed surface - Default is 0.4
+            iters= 10 #Number of iterations for surface remeshing - Default is 10
+            ratio = 1.2 #Ratio between the sphere step and the local maximum radius - Default not set, somewhere around 1.01 -> 1.2 is usually good
+            resample_step_length = 1.5 #Primary parameter for density - Default is 1.5 -> places a centerline point every _ [units of the file] along the centerline
     else:
         prep_dir = Path(sys.argv[1])
         if prep_dir == "info": 
-            print(f'Usage of centerlines_fixed.py file:\npython centerlines_fixed.py [path/to/prep/dir] [case_name] [optional: number_of_iterations] [optional: ratio]')
+            print(f'Usage of centerlines_fixed.py file:\npython centerlines_fixed.py [path/to/prep/dir] [case_name] [optional: edge_length] [optional: number_of_iterations] [optional: ratio] [optional: resample_step-length]')
             sys.exit()
-        case_name = sys.argv[2] 
-    edge_length = 0.4 #Edge length of the remeshed surface - Default is 0.4
-    iters=10 #Number of iterations for surface remeshing - Default is 10
-    ratio = 1.01 #Ratio between the sphere step and the local maxium radius
-    resample_step_length = 1.5 #Primary parameter for density - Default is 1.5 -> places a centerline point every _ [units of the file] along the centerline
+        case_name = sys.argv[2]
+        edge_length = sys.argv[3]
+        iters = sys.argv[4]
+        ratio = sys.argv[5]
+        resample_step_length = sys.argv[6]
+    
     make_cl(prep_dir=prep_dir, case_name=case_name, edge_length=edge_length, iters=iters, r=ratio, resample_step_length=resample_step_length)
     print_next_step()

@@ -49,7 +49,7 @@ def create_size_array(surf, min_el=0.2, max_el=0.7, ref='False'):
             surf, _ = cc.smooth_mesh_data_local_alt(surf, array='Size', neighbour_pt_ids = neighbour_pts, iterations = 10)
     return surf
 
-def make_mesh(proj_dir, proj_name, min_el, max_el, multi_inlets,ref):
+def make_mesh(proj_dir, proj_name, min_el, max_el, multi_inlets, ref):
     if not proj_dir.exists():
         proj_dir.mkdir()
     main_dir = proj_dir.parent
@@ -129,13 +129,28 @@ def make_mesh(proj_dir, proj_name, min_el, max_el, multi_inlets,ref):
 
 
 if __name__ == "__main__":
-    proj_dir = Path(sys.argv[1]) 
-    proj_name=sys.argv[2]
-    min_el=sys.argv[3]
-    max_el=sys.argv[4]
-    multi_inlets = sys.argv[5]
-    if len(sys.argv)>6:
-        ref=sys.argv[6]
-    else: 
-        ref='False'
+    use_parser = True
+    if len(sys.argv) == 1:
+        try:
+            import config
+            proj_dir = Path(config.mm_proj_dir)
+            print(f"Using the settings outlined in the config.py file. Project directory: {proj_dir}")
+            proj_name = config.mm_proj_name
+            min_el = config.mm_min_el
+            max_el = config.mm_max_el
+            multi_inlets = config.mm_multi_inlet
+            ref = config.mm_ref
+            use_parser = False
+        except Exception as e:
+            print(f"Exception encountered: {e}\nDefaulting to passed parameters")
+    if use_parser:
+        proj_dir = Path(sys.argv[1]) 
+        proj_name=sys.argv[2]
+        min_el=sys.argv[3]
+        max_el=sys.argv[4]
+        multi_inlets = sys.argv[5]
+        if len(sys.argv)>6:
+            ref=sys.argv[6]
+        else: 
+            ref='False'
     make_mesh(proj_dir=proj_dir, proj_name=proj_name, min_el=min_el, max_el=max_el, multi_inlets=multi_inlets, ref=ref)
