@@ -71,22 +71,31 @@ def mapped_info(prep_dir, sss, ss, lab, fen, syl, emissary, condylar):
             m.centerlines = vmtk.resample_cl(m.centerlines, length=1.4) #so we don't have as many planes and points are equispaced
             #Use the centerline points to create planes
             planes = pv.MultiBlock()
-            m.centerlines.point_data['CSA']=np.array(m.centerlines.n_points)
-            m.centerlines.point_data['perimeter']=np.array(m.centerlines.n_points)
+            m.centerlines.point_data['CSA']=np.array(m.centerlines.n_points) #Initializing the numpy array
+            m.centerlines.point_data['perimeter']=np.array(m.centerlines.n_points) #Initializing the numpy array
             points = m.centerlines.points
-            normals = m.centerlines.point_data['FrenetTangent'] 
+            normals = m.centerlines.point_data['FrenetTangent'] #Using the centerline point tangent as the normal for the plane 
             for ndx, pt in enumerate(points):
-                plane=pv.Plane(center = pt, direction = normals[ndx], i_size=20, j_size=20, i_resolution=100, j_resolution=100).triangulate()
-                plane_split = plane.clip_surface(surf)
-                split = plane_split.split_bodies()
+                plane=pv.Plane(center = pt, direction = normals[ndx], i_size=20, j_size=20, i_resolution=100, j_resolution=100).triangulate() #Creates a plane of triangular mesh elements
+                #C: Why hardcode 20 for the size of the plane and why are the resolutions 100
+                #Trying to clip with the default invert behaviour
+                plane_split = plane.clip_surface(surf, invert=True)
+                #Automation check: Is the original centerline point inside the resulting mesh bounds of the plane
+                closest_pt_idx = plane_split.find_closest_point(pt)
+                closest_pt = plane_split.points[closest_pt_idx]
+                distance = np.linalg.norm(closest_pt - pt)
+                if distance > 1e-4:
+                    plane_split = plane.clip_surface(surf, invert=False)
+                    print("inverting")
+                split = plane_split.split_bodies() #Disconnects the plane to be able to treat each slice independently
                 if len(split)>1:
                     cm = np.zeros((len(split),3))
                     for i in range(len(split)):
-                        cm[i, :] = split[i].center_of_mass()
-                    tree = KDTree(cm)
+                        cm[i, :] = split[i].center_of_mass() #Returns the [x,y,z] coordinates of the center of mass for each split plane
+                    tree = KDTree(cm) #Creating a KDTree for faster lookups
                     _, j = tree.query(pt) #closest center of mass to the centerline point
                     plane_split = split[j]
-                CSsurf = plane_split.extract_surface() 
+                CSsurf = plane_split.extract_surface()
                 area = CSsurf.area
                 edges = CSsurf.extract_feature_edges(boundary_edges=True, non_manifold_edges=False, feature_edges=False, manifold_edges=False)    
                 #p=pv.Plotter()
@@ -260,93 +269,34 @@ if __name__ == "__main__":
     #     syl = 'False'
     #     emissary='False'
     #     condylar = 'False'
-    
-    parser = argparse.ArgumentParser(description="Arguments for map_info_direct.\nClip folder location must be provided\nFor all present vessels, an inlet flow rate must be provided. If the vessel is not in the model, either don't enter it's flag or enter False for that vessel")
-    parser.add_argument('prep_dir', help='Location to the clip folder (output of surface prep file)')
-    parser.add_argument('-sss', '--superior-sigmoid-sinus', required=False, type=float, default=6.816019219, help='Flow rate through the inlet superior sinus (usually the inlet flow rate)')
-    parser.add_argument('-ss', '--sigmoid-sinus', required=False, default='False', help='Flow rate through the sigmoid sinus')
-    parser.add_argument('-l', '--labbe', required=False, default='False', help='Flow Rate through Labbe')
-    parser.add_argument('-f', '--fenestration-stenosis', required='False', default=False, help='Boolean (True or False) indicating the presence of a fenestration stenosis')
-    parser.add_argument('-sy', '--sylvian-vein', required=False, default='False', help='Flow rate through the Sylvian Vein')
-    parser.add_argument('-e', '--emissary-vein', required=False,  default='False', help='Flow rate through Emissary Vein')
-    parser.add_argument('-c', '--condylar-vein', required=False, default='False', help='Flow rate through the condylar vein')
-    args = parser.parse_args()
-    mapped_info(prep_dir=Path(args.prep_dir), sss = args.superior_sigmoid_sinus, ss = args.sigmoid_sinus, lab = args.labbe, fen = args.fenestration_stenosis, syl = args.sylvian_vein, emissary=args.emissary_vein, condylar=args.condylar_vein)    
-
-'''
-    Old crappy way. Leaving this here for reference, not for use!
-    sss_pt = cc.RefinementSelection(m.surf, name = 'flowrate', title='Choose SupSagSinus Flowrate Zone')
-    sss_pt.select() #Selects the region of interest
-    flowrate = 6.816019219 #Peak systolic
-    m.surf = define_fr(sss_pt, flowrate=flowrate) #Adds data attribute to point array called 'SSS'
-    if ss != 'False':
-        ss_pt = cc.RefinementSelection(m.surf, name = 'flowrate', title='Choose StrSinus Flowrate Zone')
-        ss_pt.select() #Selects the region of interest
-        m.surf = define_fr(ss_pt,flowrate=ss)
-        comb1_pt = cc.RefinementSelection(m.surf, name = 'flowrate', title='Choose StrSinus+SupSagSinus Flowrate Zone')
-        comb1_pt.select() #Selects the region of interest
-        flowrate+=float(ss)
-        m.surf = define_fr(comb1_pt, flowrate=flowrate) #Adds data attribute to point array called 'Comb1'
-    
-    #nondom stuff
-    if nondom !='False':
-        nd_pt = cc.RefinementSelection(m.surf, name = 'flowrate', title='Choose LessDom Flowrate Zone')
-        nd_pt.select() #Selects the region of interest
-        m.surf = define_fr(nd_pt, flowrate=flowrate*float(nondom))
-        comb0_pt = cc.RefinementSelection(m.surf, name = 'flowrate', title='Choose Dom Flowrate Zone')
-        comb0_pt.select() #Selects the region of interest
-        flowrate -= float(nondom)*flowrate
-        flowrate_nondom=float(nondom)*flowrate
-        m.surf = define_fr(comb0_pt, flowrate=flowrate)
-    if outflow2 !='False': #non-dom side outflow
-        of0_pt = cc.RefinementSelection(m.surf, name = 'flowrate', title='Choose Out2 (LessDom) Flowrate Zone')
-        of0_pt.select() #Selects the region of interest
-        m.surf = define_fr(of0_pt, flowrate=flowrate_nondom*float(outflow2))
-        comb4_pt = cc.RefinementSelection(m.surf, name = 'flowrate', title='Choose LessDom-Out0 Flowrate Zone')
-        comb4_pt.select() #Selects the region of interest
-        flowrate -= float(outflow2)*flowrate_nondom
-        m.surf = define_fr(comb4_pt, flowrate=flowrate_nondom)
-
-    #dom stuff
-    if lab !='False':
-        lab_pt = cc.RefinementSelection(m.surf, name = 'flowrate', title='Choose Labbe/Tant Flowrate Zone')
-        lab_pt.select() #Selects the region of interest
-        m.surf = define_fr(lab_pt, flowrate=lab)
-        comb2_pt = cc.RefinementSelection(m.surf, name = 'flowrate', title='Choose StrSinus+SupSagSinus+Labbe/Tant Flowrate Zone')
-        comb2_pt.select() #Selects the region of interest
-        flowrate += float(lab)
-        m.surf = define_fr(comb2_pt, flowrate=flowrate) #Adds data attribute to point array called 'SS
-    if outflow1 !='False':
-        of1_pt = cc.RefinementSelection(m.surf, name = 'flowrate', title='Choose Out1 Flowrate Zone')
-        of1_pt.select() #Selects the region of interest
-        m.surf = define_fr(of1_pt, flowrate=flowrate*float(outflow1))
-        comb3_pt = cc.RefinementSelection(m.surf, name = 'flowrate', title='Choose StrSinus+SupSagSinus+Labbe-Out1 Flowrate Zone')
-        comb3_pt.select() #Selects the region of interest
-        flowrate -= float(outflow1)*flowrate
-        m.surf = define_fr(comb3_pt, flowrate=flowrate) #Adds data attribute to point array called 'SS
-    m.surf.point_data['flowrate'][m.surf.point_data['flowrate']==0]=flowrate #make sure flowrate is nonzero everywhere
-    if fen !='False':
-        fen_pt1 = cc.RefinementSelection(m.surf, name = 'FEN1', title='Choose 1st Fenest Flowrate Zone')
-        fen_pt1.select() #Selects the region of interest
-        fen_pt1.define_surface() 
-        m.surf = fen_pt1.surf
-        fen_pt2 = cc.RefinementSelection(m.surf, name = 'FEN2', title='Choose 2nd Fenest Flowrate Zone')
-        fen_pt2.select() #Selects the region of interest
-        fen_pt2.define_surface() #Adds boolean data attribute to point array called 'AG'
-        m.surf = fen_pt2.surf
-        #get average CSA ratio between branches:
-        centerlines=pv.read(cent_file)
-        tree3 = KDTree(centerlines.points)
-        _, idx_a = tree3.query(m.surf.points[m.surf.point_data['FEN1']==1])
-        _, idx_b = tree3.query(m.surf.points[m.surf.point_data['FEN2']==1])
-        fen1 = np.mean(centerlines.point_data['CSA'][idx_a])
-        fen2 = np.mean(centerlines.point_data['CSA'][idx_b])
-        ratio1 = fen1/(fen1+fen2)
-        ratio2 = fen2/(fen1+fen2)
-        m.surf.point_data['flowrate'][m.surf.point_data['FEN1']==1]=m.surf.point_data['flowrate'][m.surf.point_data['FEN1']==1]*ratio1
-        m.surf.point_data['flowrate'][m.surf.point_data['FEN2']==1]=m.surf.point_data['flowrate'][m.surf.point_data['FEN2']==1]*ratio2
-    ref_pt = cc.RefinementSelection(m.surf, name = 'ref')
-    ref_pt.select() #Selects the region of interest
-    ref_pt.define_surface() #Adds boolean data attribute to point array called 'ref'
-    m.surf = ref_pt.surf
-    '''
+    use_parser = True
+    if len(sys.argv) == 1:
+        try:
+            import config
+            prep_dir = Path(config.mid_prep_dir)
+            print(f"Using the settings outlined in the config.py file - prep directory: {prep_dir}")
+            sss = config.mid_sss
+            ss = config.mid_ss
+            labbe = config.mid_lab
+            fen = config.mid_fen
+            syl = config.mid_syl
+            emi = config.mid_emissary
+            con = config.mid_condylar
+            use_parser = False
+        except Exception as e:
+            print(f"Error: {e}")
+            print("Failed to use config file for settings - switching to using the arguments provided")
+    if use_parser:
+        parser = argparse.ArgumentParser(description="Arguments for map_info_direct.\nClip folder location must be provided\nFor all present vessels, an inlet flow rate must be provided. If the vessel is not in the model, either don't enter it's flag or enter False for that vessel")
+        parser.add_argument('prep_dir', help='Location to the clip folder (output of surface prep file)')
+        parser.add_argument('-sss', '--superior-saggital-sinus', required=False, type=float, default=6.816019219, help='Flow rate through the inlet superior saggital sinus (the peak systolic inlet flow rate)')
+        parser.add_argument('-ss', '--sigmoid-sinus', required=False, default='False', help='Flow rate through the sigmoid sinus')
+        parser.add_argument('-l', '--labbe', required=False, default='False', help='Flow Rate through Labbe')
+        parser.add_argument('-sy', '--sylvian-vein', required=False, default='False', help='Flow rate through the Sylvian Vein')
+        parser.add_argument('-e', '--emissary-vein', required=False,  default='False', help='Flow rate through Emissary Vein')
+        parser.add_argument('-c', '--condylar-vein', required=False, default='False', help='Flow rate through the condylar vein')
+        parser.add_argument('-f', '--fenestration-stenosis', required=False, default='False', help='Boolean (True or False) indicating the presence of a fenestration stenosis')
+        args = parser.parse_args()
+        mapped_info(prep_dir=Path(args.prep_dir), sss = args.superior_sigmoid_sinus, ss = args.sigmoid_sinus, lab = args.labbe, fen = args.fenestration_stenosis, syl = args.sylvian_vein, emissary=args.emissary_vein, condylar=args.condylar_vein)    
+    else:
+        mapped_info(prep_dir=prep_dir,sss=sss,ss=ss,lab=labbe,fen=fen,syl=syl,emissary=emi,condylar=con)
