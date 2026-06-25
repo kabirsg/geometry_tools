@@ -76,25 +76,27 @@ def mapped_info(prep_dir, sss, ss, lab, fen, syl, emissary, condylar):
             points = m.centerlines.points
             normals = m.centerlines.point_data['FrenetTangent'] #Using the centerline point tangent as the normal for the plane 
             for ndx, pt in enumerate(points):
-                plane=pv.Plane(center = pt, direction = normals[ndx], i_size=20, j_size=20, i_resolution=100, j_resolution=100).triangulate() #Creates a plane of triangular mesh elements
-                #C: Why hardcode 20 for the size of the plane and why are the resolutions 100
+                plane=pv.Plane(center = pt, direction = normals[ndx], i_size=20, j_size=20, i_resolution=100, j_resolution=100).triangulate() #Creates a plane of triangular mesh elements - size is 20 just to be bigger than any vessel that we would use
+                
                 #Trying to clip with the default invert behaviour
                 plane_split = plane.clip_surface(surf, invert=True)
                 #Automation check: Is the original centerline point inside the resulting mesh bounds of the plane
                 closest_pt_idx = plane_split.find_closest_point(pt)
-                closest_pt = plane_split.points[closest_pt_idx]
+                closest_pt = plane_split.points[closest_pt_idx] #Numpy array containing [x,y,z] coordinates of the closest point
                 distance = np.linalg.norm(closest_pt - pt)
-                if distance > 1e-4:
-                    plane_split = plane.clip_surface(surf, invert=False)
+                if distance > 1e-4: #If the distance is less than this distance, then it is probably inside the plane boundaries
+                    plane_split = plane.clip_surface(surf, invert=False) #Redo the plane clipping but inverted
                     print("inverting")
-                split = plane_split.split_bodies() #Disconnects the plane to be able to treat each slice independently
+                
+                split = plane_split.split_bodies() #Disconnects the planes if there are multiple (means that it intersected more than 1 branch)
                 if len(split)>1:
                     cm = np.zeros((len(split),3))
                     for i in range(len(split)):
                         cm[i, :] = split[i].center_of_mass() #Returns the [x,y,z] coordinates of the center of mass for each split plane
-                    tree = KDTree(cm) #Creating a KDTree for faster lookups
-                    _, j = tree.query(pt) #closest center of mass to the centerline point
-                    plane_split = split[j]
+                    tree = KDTree(cm) #KDTree for nearest neighbour lookup
+                    _, j = tree.query(pt) # Plane with COM closest to the centerline point is the corresponding plane
+                    plane_split = split[j] #Making sure the plane that will be used is only that one branch's plane
+                
                 CSsurf = plane_split.extract_surface()
                 area = CSsurf.area
                 edges = CSsurf.extract_feature_edges(boundary_edges=True, non_manifold_edges=False, feature_edges=False, manifold_edges=False)    
@@ -112,6 +114,7 @@ def mapped_info(prep_dir, sss, ss, lab, fen, syl, emissary, condylar):
             m.centerlines.save(cent_file)
             planes.save(planes_files)
         else:
+            print("Found existing mapped file - continuing using this")
             m.centerlines = pv.read(cent_file)
             planes = pv.read(planes_files)
         #Create mapping to surface
