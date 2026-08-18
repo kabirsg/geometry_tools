@@ -86,7 +86,7 @@ def surface_prep(surf_file, proj_dir, surf_type):
                 extender = cc.Flow_Extender(pv.wrap(surf_vmtk_inlet_flow_ext), mesher.centerlines,inlet_points=mesher.inlet_points, outlet_points=mesher.outlet_points).add_outlet_flow_ext() #Creates a Flow Extender object and runs the function to create the outlet flow extensions
                 accept = extender.accept
             mesher.surf = extender.surf
-            mesher.update_inlets_outlets()         
+            mesher.update_inlets_outlets()
 
         mesher.surf.save(surf_file_out) #saves the clipped surface with extensions
         mesher.save_inlet_outlet_points(points_file_out, include_aneurysms=anubool, include_normals = True)
@@ -106,8 +106,8 @@ if __name__ == "__main__":
             proj_dir = config.sp_proj_dir
             surf_type = config.sp_surf_type
         else:
-            surf_file = "/home/kabir/masters_files/DLP/Gurnish_CaseC_PTSeg106/Case_C_Gurnish.stl"
-            proj_dir = "/home/kabir/masters_files/DLP/Gurnish_CaseC_PTSeg106/Case_C_clipped"
+            surf_file = ""
+            proj_dir = ""
             surf_type = 'pt' #options: a or pt
     else:
         surf_file = sys.argv[1]

@@ -43,7 +43,6 @@ def make_cl(prep_dir, case_name, edge_length, iters, r, resample_step_length):
         centerlines = vmtk.centerline_geometry(centerlines)
         centerlines.save(out_dir/(case_name+'_cl_centerline_graph_vmtk.vtp'))
         if val == 'y':
-            print_next_step()
             sys.exit()
         
         #use vmtk for each segment
@@ -84,15 +83,6 @@ def make_cl(prep_dir, case_name, edge_length, iters, r, resample_step_length):
         centerline_resampled = vmtk.resample_cl(m.centerlines, length=resample_step_length) #Was originally 1.5 from Anna
         centerline_resampled.save(resampled_file)
 
-def print_next_step(): 
-    print("Completed centerline generation")
-    print("Next step: Map info")
-    print("Usage: Gives parameters that can be looked at in Paraview")
-    print("Scripts:\nmap_info_direct.py: For simpler cases - extracts metrics directly from the centerlines\t-->\tif this doesn't work go to map_info")
-    print("map_info.py: For more complicated geometries with intersecting planes - Creates planes and extracts metrics based on the planes")
-    print("map_info_bilateral.py: For cases with bilateral geometry")
-    print("Command: map_info_direct.py [path/to/clipped/folder] [flowrate_at_inlet_1] [flowrate_at_inlet_2] False False False False False")
-
 if __name__ == "__main__":
     if len(sys.argv) == 1:
         try:
@@ -123,4 +113,3 @@ if __name__ == "__main__":
         resample_step_length = sys.argv[6]
     
     make_cl(prep_dir=prep_dir, case_name=case_name, edge_length=edge_length, iters=iters, r=ratio, resample_step_length=resample_step_length)
-    print_next_step()
