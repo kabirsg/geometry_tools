@@ -450,7 +450,7 @@ def create_edge_size_array(surf, fix_centerline, min_edge_size=0.1, max_edge_siz
 class RefinementSelection():
     """ Interactively create a refinement region by selecting cells on the mesh
     and then obtaining the points they are associated with and assigning them a 
-    point_array (eg. 'RefinementPoints') which contains a boolean if those cells were
+    point_data array (eg. 'RefinementPoints') which contains a boolean if those cells were
     picked. 
     
     Later, these booleans will be used to assign a target edge length that will 
@@ -1364,7 +1364,7 @@ def get_normal_component(surf, array='u', normals='Normals',):
     return surf
 
 class Flow_Extender():
-    def __init__(self, surf = None, centerlines = None, inlet_points=None, outlet_points=None,length = 2):
+    def __init__(self, surf = None, centerlines = None, inlet_points: np.ndarray | None = None, outlet_points: np.ndarray | None = None,length = 2):
         self.surf = surf
         #self.surf_og=surf
         self.centerlines = centerlines
@@ -1382,20 +1382,28 @@ class Flow_Extender():
         self.extrude()
         return self
 
+    '''
+    Finds every open end of the surface
+    '''
     def get_boundary_pts(self):
+        #Pulling out boundary edges
         edges = self.surf.extract_feature_edges(boundary_edges=True, feature_edges=False, manifold_edges=False)
+        #Giving each ring a RegionID
         edges = edges.connectivity()
         self.edges=edges
+        #Getting the unique regions
         regions = np.unique(edges.point_data['RegionId'])
         self.regions = regions
         masks = [edges.point_data['RegionId'] == r for r in regions]
-        self.profiles = pv.MultiBlock([edges.extract_points(m) for m in masks])
+        #Each ring (only the rim of each open end) goes into self.profiles, which holds every open boundary (including inlets even though inlets aren't dealt with in this class)
+        self.profiles = pv.MultiBlock([edges.extract_points(m) for m in masks]) #Has n_inlets + n_outlets entries
 
     def get_normal_radius_effective(self):
         self.radii = np.empty(len(self.profiles))
         self.lengths = np.empty(len(self.profiles))
         self.prof_surf=pv.MultiBlock()
         for idx, prof in enumerate(self.profiles):
+            #Creates a 2d surface from the rim points making up the profile
             prof_surf = prof.delaunay_2d()
             self.prof_surf.append(prof_surf)
             area = prof_surf.area
@@ -1403,50 +1411,64 @@ class Flow_Extender():
             self.radii[idx]=radius_eff
             self.lengths[idx]=self.length*radius_eff*2
 
-        #associate lengths with inlet or outlet points
+        ''' associate lengths with inlet or outlet points '''
+        #Getting the center of each ring
         centers = np.array([x.points.mean(axis=0) for x in self.profiles])
         centers_m = pv.wrap(centers)
+        #Using a KDTree to match each known inlet point to it's nearest ring center
         tree = KDTree(centers)
         inlet_ids = [tree.query(i)[1] for i in self.inlet_points]
+        #Left over ring centers are associated with outlets
         outlet_ids = list(set(range(centers_m.n_points)) - set(inlet_ids))
+        self.outlet_ids = outlet_ids
         self.lengths_out=self.lengths[outlet_ids]
         self.lengths_in=self.lengths[inlet_ids]
         self.radii_in=self.radii[inlet_ids]
 
+        #Replacing inlet and outlet point variables with the actual ring centers - more exact
         self.inlet_points = [centers[i] for i in inlet_ids]
         self.outlet_points = [centers[i] for i in outlet_ids]
 
         #get normals for profiles using centerlines
+        #Using another KDTree to find the nearest centerline point to each boundary ring center
         self.tree = KDTree(self.centerlines.points)
         _, in_ids = self.tree.query(self.inlet_points)
         _, out_ids = self.tree.query(self.outlet_points)
+        #Closest centerline point's FrenetTangent is used as normal of profile
         self.in_normals = self.centerlines.point_data['FrenetTangent'][in_ids]
         self.out_normals = -self.centerlines.point_data['FrenetTangent'][out_ids]
 
+    '''
+    C: NEED TO FIX THIS FUNCTION TO USE THE OUTLET_ID FROM SELF.OUTLET_IDS INSTEAD OF USING ID
+    '''
     def extrude(self):
+        #Looping through the list of outlet centers (everywhere that needs a flow extension)
         for id, pt in enumerate(self.outlet_points):
-            #check that z is negative (should always be for outlets, but the Frenet Tangent isn't always oriented properly)
+            #check that z component of the normal is negative (should always be for outlets, but the Frenet Tangent isn't always oriented properly)
             if self.out_normals[id][2]>0:
                 #look for closest neighbour centerline pt
-                _, pidx = self.tree.query(pt)
+                _, pidx = self.tree.query(pt) #self.tree is from get_normal_radius_effective - KDTree of centerline points
                 p2 = self.centerlines.points[pidx]
                 #if the vector between the two points still has a positive Z, do nothing, otherwise invert the normal vector
                 #otherwise the Frenet Tangent is inverted
                 if (pt-p2)[2]<0:
                     self.out_normals[id]=-self.out_normals[id]
+
+            #Get the center of the target plane where the flow extension should end
             center=pt+self.out_normals[id]*self.lengths_out[id]
             plane = pv.Plane(center=center, direction=self.out_normals[id], i_size = 30, j_size=30)
+            #Extruding a hollow tube
             self.prof_surf[id] = self.prof_surf[id].extrude(self.out_normals[id]*self.lengths_out[id]*1.5, capping=False)
             self.prof_surf[id] = self.prof_surf[id].triangulate()
             #self.prof_surf[id] = self.prof_surf[id].subdivide(2)
-            
+            #Clipping the hollow tube at the plane generated earlier
             clipped=self.prof_surf[id].clip_surface(plane, invert=False)
             
             self.outlet_points[id] = center
             self.surf=self.surf.merge(clipped, merge_points=True)  
             self.surf=self.surf.clean(tolerance=0.0001)
-  
-        self.surf = self.surf.fill_holes(1)
+
+        self.surf = self.surf.fill_holes(1) #Only patching small holes (up to size 1)
         self.surf=self.surf.smooth(n_iter=5)
         self.surf = self.surf.fill_holes(1)
         self.surf=self.surf.clean(tolerance=0.0001)
