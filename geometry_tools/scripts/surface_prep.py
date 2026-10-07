@@ -47,6 +47,7 @@ def surface_prep(surf_file, proj_dir, surf_type):
         case_start = time.time()
 
         surf = pv.read(surf_file)
+        surf = cc.remove_duplicate_faces(surf) #Some STLs store every triangle twice, which hides the clipped openings
         surf = surf.compute_normals(auto_orient_normals=False)
         if surf_type=='a': 
             mesher = Mesher(surf, include_aneurysms=True)
@@ -70,7 +71,12 @@ def surface_prep(surf_file, proj_dir, surf_type):
         else:
             accept = False
             while not accept:
-                if not clipped_surf.exists(): 
+                redo_clip = True
+                if clipped_surf.exists():
+                    ans = input(f'Clipped surface {clipped_surf.name} already exists. Redo the clipping? [y/n]: ').strip().lower()
+                    redo_clip = ans == 'y'
+                if redo_clip:
+                    mesher.surf = surf.copy() #Clipping from the original (unclipped) surface
                     mesher.clip_boundaries(method='box')
                 else:
                     mesher.surf = pv.read(clipped_surf)
@@ -84,6 +90,22 @@ def surface_prep(surf_file, proj_dir, surf_type):
                 plotter.show()
                 surf_vmtk_inlet_flow_ext = vmtk.flow_ext(mesher.surf, mesher.centerlines, mesher.inlet_ids) #Adds inlet flow extension only
                 extender = cc.Flow_Extender(pv.wrap(surf_vmtk_inlet_flow_ext), mesher.centerlines,inlet_points=mesher.inlet_points, outlet_points=mesher.outlet_points).add_outlet_flow_ext() #Creates a Flow Extender object and runs the function to create the outlet flow extensions
+                #On rejection, check if it's just flow extension directions before redoing everything
+                while not extender.accept:
+                    ans = input('Are any flow extensions pointing the wrong direction? [y/n]: ').strip().lower()
+                    if ans != 'y':
+                        break #Redo clipping/centerlines
+                    flip_in = input('Enter the outlet numbers to flip, separated by commas (eg. 0,2): ')
+                    try:
+                        flip_ids = [int(i) for i in flip_in.replace(',', ' ').split()]
+                    except ValueError:
+                        print('Invalid input, please enter integers only.')
+                        continue
+                    bad_ids = [i for i in flip_ids if not 0 <= i < len(extender.outlet_ids)]
+                    if bad_ids:
+                        print(f'Outlet numbers {bad_ids} do not exist. Skipping...')
+                        continue
+                    extender.flip_outlets(flip_ids)
                 accept = extender.accept
             mesher.surf = extender.surf
             mesher.update_inlets_outlets()

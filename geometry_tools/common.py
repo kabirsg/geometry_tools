@@ -4,6 +4,7 @@ import pyvista as pv
 from scipy.spatial import cKDTree as KDTree 
 from scipy.interpolate import interp1d
 import warnings
+from typing import Optional
         
 # from pathlib import Path 
 # import h5py 
@@ -1266,6 +1267,23 @@ def get_sac_surface_mask(mesh, sac):
     return mesh
 
     
+def remove_duplicate_faces(surf):
+    """ Remove repeated triangles (same points, any order/winding) from a surface.
+
+    Some STL exports store every triangle twice. Clipping such a surface leaves
+    each cut edge shared by two coincident triangles, so no boundary edges (open
+    profiles) get detected.
+    """
+    surf = surf.triangulate()
+    faces = surf.faces.reshape(-1, 4)[:, 1:]
+    _, keep = np.unique(np.sort(faces, axis=1), axis=0, return_index=True)
+    if len(keep) == len(faces):
+        return surf
+    print(f'Removed {len(faces) - len(keep)} duplicate faces from surface.')
+    keep = np.sort(keep)
+    out = pv.PolyData(surf.points, np.hstack([np.full((len(keep), 1), 3), faces[keep]]).ravel())
+    return out.clean()
+
 def decimate_edge_length(surf, target_edge_length):
     edges = surf.extract_all_edges()
     mean_el = edges.compute_cell_sizes().cell_data['Length'].mean()
@@ -1364,7 +1382,7 @@ def get_normal_component(surf, array='u', normals='Normals',):
     return surf
 
 class Flow_Extender():
-    def __init__(self, surf = None, centerlines = None, inlet_points: np.ndarray | None = None, outlet_points: np.ndarray | None = None,length = 2):
+    def __init__(self, surf = None, centerlines = None, inlet_points: Optional[np.ndarray] = None, outlet_points: Optional[np.ndarray] = None,length = 2):
         self.surf = surf
         #self.surf_og=surf
         self.centerlines = centerlines
@@ -1372,7 +1390,13 @@ class Flow_Extender():
         self.inlet_points=inlet_points
         self.outlet_points = outlet_points
         self.accept = True
-    
+        #Outlet indices (in self.outlet_points order) whose extrusion direction should be flipped
+        self.flip_ids = set()
+        #Keeping the original inputs so the outlet extensions can be redone with flipped directions
+        self.surf_in = surf
+        self.inlet_points_in = inlet_points
+        self.outlet_points_in = outlet_points
+
     '''
     Runs the three functions that are required to create a Flow Extension on the outlet only
     '''
@@ -1381,6 +1405,18 @@ class Flow_Extender():
         self.get_normal_radius_effective()
         self.extrude()
         return self
+
+    '''
+    Redoes the outlet flow extensions with the given outlet indices flipped (toggled relative to the
+    current direction, so flipping the same index twice returns it to the original direction)
+    '''
+    def flip_outlets(self, flip_ids):
+        self.flip_ids ^= set(flip_ids)
+        self.surf = self.surf_in
+        self.inlet_points = self.inlet_points_in
+        self.outlet_points = self.outlet_points_in
+        self.accept = True
+        return self.add_outlet_flow_ext()
 
     '''
     Finds every open end of the surface
@@ -1438,12 +1474,13 @@ class Flow_Extender():
         self.in_normals = self.centerlines.point_data['FrenetTangent'][in_ids]
         self.out_normals = -self.centerlines.point_data['FrenetTangent'][out_ids]
 
-    '''
-    C: NEED TO FIX THIS FUNCTION TO USE THE OUTLET_ID FROM SELF.OUTLET_IDS INSTEAD OF USING ID
-    '''
     def extrude(self):
+        #Keeping the ring centers (before they get replaced by the extension ends) for labelling outlets
+        self.outlet_centers = np.array(self.outlet_points)
         #Looping through the list of outlet centers (everywhere that needs a flow extension)
         for id, pt in enumerate(self.outlet_points):
+            #self.prof_surf holds every ring (inlets included), so map to the ring belonging to this outlet
+            prof_id = self.outlet_ids[id]
             #check that z component of the normal is negative (should always be for outlets, but the Frenet Tangent isn't always oriented properly)
             if self.out_normals[id][2]>0:
                 #look for closest neighbour centerline pt
@@ -1454,15 +1491,19 @@ class Flow_Extender():
                 if (pt-p2)[2]<0:
                     self.out_normals[id]=-self.out_normals[id]
 
+            #Manually requested flip
+            if id in self.flip_ids:
+                self.out_normals[id]=-self.out_normals[id]
+
             #Get the center of the target plane where the flow extension should end
             center=pt+self.out_normals[id]*self.lengths_out[id]
             plane = pv.Plane(center=center, direction=self.out_normals[id], i_size = 30, j_size=30)
             #Extruding a hollow tube
-            self.prof_surf[id] = self.prof_surf[id].extrude(self.out_normals[id]*self.lengths_out[id]*1.5, capping=False)
-            self.prof_surf[id] = self.prof_surf[id].triangulate()
-            #self.prof_surf[id] = self.prof_surf[id].subdivide(2)
+            self.prof_surf[prof_id] = self.prof_surf[prof_id].extrude(self.out_normals[id]*self.lengths_out[id]*1.5, capping=False)
+            self.prof_surf[prof_id] = self.prof_surf[prof_id].triangulate()
+            #self.prof_surf[prof_id] = self.prof_surf[prof_id].subdivide(2)
             #Clipping the hollow tube at the plane generated earlier
-            clipped=self.prof_surf[id].clip_surface(plane, invert=False)
+            clipped=self.prof_surf[prof_id].clip_surface(plane, invert=False)
             
             self.outlet_points[id] = center
             self.surf=self.surf.merge(clipped, merge_points=True)  
@@ -1484,6 +1525,8 @@ class Flow_Extender():
         pl2.add_title(title = "Inspect for unfilled holes")
         pl2.add_mesh(edges, color='red')
         pl2.add_mesh(self.surf, opacity=0.5)
+        #Labelling each outlet so it can be referred to when flipping extension directions
+        pl2.add_point_labels(self.outlet_centers, [f'outlet {i}' for i in range(len(self.outlet_centers))], point_size=10, font_size=14)
         pl2.add_text('r+q: reject and redo', position=(0.05, 25), font_size=12)
         pl2.add_text('q: accept', position=(0.05, 50), font_size=12)
         pl2.add_key_event('r',_reject)
