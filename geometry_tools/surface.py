@@ -235,6 +235,10 @@ class Surfer():
             feature_edges=False, 
             manifold_edges=False
             )
+        if edges.n_points == 0:
+            raise RuntimeError('No open boundaries found on the surface. Check that the clip actually opened the vessel ends '
+                               'and that the surface has no duplicate faces (see common.remove_duplicate_faces). '
+                               'If a bad *_noext.vtp was saved, delete it so the clipping is redone.')
         edges = edges.connectivity()
         regions = np.unique(edges.point_data['RegionId'])
         masks = [edges.point_data['RegionId'] == r for r in regions]

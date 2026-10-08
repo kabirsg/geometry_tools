@@ -376,25 +376,42 @@ def mapped_info(prep_dir, sss, ss, split_flow, lab, fen, syl, emissary, condylar
     m.surf.save(mapped_file)
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Bilateral Mapping for Meshing')
-    parser.add_argument('-prep_dir', dest = 'prep_dir', required = True,
-                        help='The directory where the prepped files are stored.')
-    parser.add_argument('-sss', dest = 'sss', type=float, default = 6.816019219,
-                        help='The inlet flowrate for the Superior Saggital Sinus at peak systole.')
-    parser.add_argument('-ss', dest='ss', type=str, nargs="*", default= ['False', 'r'],
-                        help='The inlet flowrate for the Straight Sinus at peak systole, and whether it is to the left or right of the SSS.')
-    parser.add_argument('-split', dest='split', nargs="*", type=float, default=[0.5, 0.5],
-                        help='The flow split at the SSS. Left Right.')    
-    parser.add_argument('-lab', dest='lab', nargs="*", type=str, default=['False', 'False'],
-                        help='The inlet flowrate(s) for the Labbe vein(s) at peak systole. Left Right.')
-    parser.add_argument('-fen', dest='fen', nargs="*", type=str, default=['False','False'],
-                        help='Whether there is a fenestration (on either side). Left Right.')
-    parser.add_argument('-syl', dest='syl', nargs="*", type=str, default=['False', 'False'],
-                        help='The inlet flowrate(s) for the Sylvian vein(s) at peak systole. Left Right.')
-    parser.add_argument('-emissary', dest='emissary', nargs="*", type=str, default=['False', 'False'],
-                        help='The outlet flow split(s) for the Emissary vein(s) at peak systole. Left Right.')
-    parser.add_argument('-condylar', dest='condylar', nargs="*", type=str, default=['False', 'False'],
-                        help='The outlet flow split(S) for the Condylar vein(s) at peak systole. Left Right.')
-    args = parser.parse_args()
+    if len(sys.argv) == 1:
+        try:
+            import config
+            mapped_info(
+                prep_dir=Path(config.mib_prep_dir),
+                sss=config.mib_sss,
+                ss=config.mib_ss,
+                split_flow=config.mib_split,
+                lab=config.mib_lab,
+                fen=config.mib_fen,
+                syl=config.mib_syl,
+                emissary=config.mib_emissary,
+                condylar=config.mib_condylar
+            )
+        except Exception as e:
+            raise Exception(f"Exception encountered: {e}\nPlease use the command line elements to run the script")
+    else:
+        parser = argparse.ArgumentParser(description='Bilateral Mapping for Meshing')
+        parser.add_argument('-prep_dir', dest = 'prep_dir', required = True,
+                            help='The directory where the prepped files are stored.')
+        parser.add_argument('-sss', dest = 'sss', type=float, default = 6.816019219,
+                            help='The inlet flowrate for the Superior Saggital Sinus at peak systole.')
+        parser.add_argument('-ss', dest='ss', type=str, nargs="*", default= ['False', 'r'],
+                            help='The inlet flowrate for the Straight Sinus at peak systole, and whether it is to the left or right of the SSS.')
+        parser.add_argument('-split', dest='split', nargs="*", type=float, default=[0.5, 0.5],
+                            help='The flow split at the SSS. Left Right.')    
+        parser.add_argument('-lab', dest='lab', nargs="*", type=str, default=['False', 'False'],
+                            help='The inlet flowrate(s) for the Labbe vein(s) at peak systole. Left Right.')
+        parser.add_argument('-fen', dest='fen', nargs="*", type=str, default=['False','False'],
+                            help='Whether there is a fenestration (on either side). Left Right.')
+        parser.add_argument('-syl', dest='syl', nargs="*", type=str, default=['False', 'False'],
+                            help='The inlet flowrate(s) for the Sylvian vein(s) at peak systole. Left Right.')
+        parser.add_argument('-emissary', dest='emissary', nargs="*", type=str, default=['False', 'False'],
+                            help='The outlet flow split(s) for the Emissary vein(s) at peak systole. Left Right.')
+        parser.add_argument('-condylar', dest='condylar', nargs="*", type=str, default=['False', 'False'],
+                            help='The outlet flow split(S) for the Condylar vein(s) at peak systole. Left Right.')
+        args = parser.parse_args()
 
-    mapped_info(prep_dir=Path(args.prep_dir), sss= args.sss, ss = args.ss, split_flow=args.split, lab = args.lab, fen = args.fen, syl = args.syl, emissary = args.emissary, condylar = args.condylar)
+        mapped_info(prep_dir=Path(args.prep_dir), sss= args.sss, ss = args.ss, split_flow=args.split, lab = args.lab, fen = args.fen, syl = args.syl, emissary = args.emissary, condylar = args.condylar)

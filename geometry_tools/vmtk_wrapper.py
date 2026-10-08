@@ -9,10 +9,6 @@ Functions often provide a simplified input; feel free to add
 optional arguments.
 """
 
-#from networkx.algorithms.centrality import group
-from email.utils import collapse_rfc2231_value
-from networkx.algorithms.distance_measures import center
-from numpy import testing
 from vmtk import vmtkscripts
 from vmtk import vtkvmtk
 from geometry_tools import utils 
