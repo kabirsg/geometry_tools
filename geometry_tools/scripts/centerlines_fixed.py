@@ -83,6 +83,11 @@ def make_cl(prep_dir, case_name, edge_length, iters, r, resample_step_length):
         centerline_resampled = vmtk.resample_cl(m.centerlines, length=resample_step_length) #Was originally 1.5 from Anna
         centerline_resampled.save(resampled_file)
 
+def find_case_name(directory):
+    '''If no case name is given, take the first stl file that can be found in the parent folder of the prep directory'''
+    stl_files = Path(directory).glob("*.stl")
+    return next(stl_files).stem
+
 if __name__ == "__main__":
     if len(sys.argv) == 1:
         try:
@@ -90,6 +95,8 @@ if __name__ == "__main__":
             prep_dir = Path(config.cf_prep_dir)
             print(f"Using the settings outlined in the config.py file. Prep Directory: {prep_dir}")
             case_name = config.cf_case_name
+            if case_name == "" or case_name == None:
+                case_name = find_case_name(prep_dir.parent)
             edge_length = config.cf_edge_length
             iters = config.cf_iters
             ratio = config.cf_ratio
