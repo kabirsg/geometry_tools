@@ -1,3 +1,4 @@
+import os
 ###############################
 ###     1. SURFACE PREP     ###
 ###############################
@@ -27,6 +28,7 @@ cs_case_name = ""
 #map_info_direct (mid)
 #Note: For flow rate parameters (except sss), if the vessel is not present, input "False" (with quotes)
 mid_prep_dir = sp_proj_dir #Surface_prep project directory should have the clipped files
+mid_case_name = cf_case_name #THIS MUST BE THE SAME AS THE CENTERLINES_FIXED CASE NAME - Used to detect files that are needed by the script
 mid_sss = 6.816019210 #Superior Sagittal Sinus flow rate - required
 mid_ss = "False" #Sigmoid Sinus flow rate
 mid_lab = "False" #Labbe Flow rate
@@ -59,7 +61,7 @@ mib_fen = ['False', 'False'] #Boolean ('True'/'False') indicating presence of fe
 mm_proj_dir = sp_proj_dir #Directory storing project files
 mm_proj_name = cf_case_name #Case name - default using the same as from centerline generation
 mm_min_el = 0.2 #Minium mesh edge length - based on Taylor lengths
-mm_max_el = 0.7 #Maximum mesh edge length - based on Taylor lengths
+mm_max_el = 0.5 #Maximum mesh edge length - based on Taylor lengths
 mm_multi_inlet = 'single' #'single' or 'Multi' inlets
 mm_ref = 'False' #Refinement level
 
@@ -67,4 +69,4 @@ mm_ref = 'False' #Refinement level
 ###     6. MESH QUALITY     ###
 ###############################
 #meshquality (mq)
-mq_file_name = "" #Mesh file path (.vtu file generation by make_mesh)
+mq_file_name = os.path.join(mm_proj_dir, "mesh", f"{mm_proj_name}.vtu") #Mesh file path (.vtu file generation by make_mesh)
