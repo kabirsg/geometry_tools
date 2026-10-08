@@ -274,6 +274,13 @@ class Surfer():
         else:
             problems.append('no open boundaries')
 
+        #Consistent winding: neighbouring triangles should traverse their shared edge in opposite directions.
+        directed = np.vstack([faces[:, [0, 1]], faces[:, [1, 2]], faces[:, [2, 0]]])
+        _, dir_count = np.unique(directed, axis=0, return_counts=True)
+        n_flipped = int(np.sum(dir_count > 1))
+        if n_flipped:
+            problems.append(f'inconsistent triangle winding: {n_flipped} edges traversed twice in the same direction (flipped normals)')
+
         if problems:
             print('WARNING: surface problems that can cause "can\'t reconstruct new profile" in the network extractor:')
             for p in problems:
