@@ -23,7 +23,7 @@ def make_cl(prep_dir, case_name, edge_length, iters, r, resample_step_length):
     surf_file = sorted(prep_dir.glob('*cl.vtp'))[0]
     surf=pv.read(surf_file)
     remeshed_file = out_dir/(case_name+'_remeshed.vtp')
-    graphed_cl_file = out_dir/(case_name+'_centerline_graph_vmtk.vtp')
+    graphed_cl_file = out_dir/(case_name+'_cl_centerline_graph_vmtk.vtp')
     resampled_file =  out_dir/(case_name+'_centerline_resampled.vtp')
     if not remeshed_file.exists():
         surf = vmtk.surface_remeshing(surf, edgelength=edge_length, iterations = iters)
@@ -41,7 +41,7 @@ def make_cl(prep_dir, case_name, edge_length, iters, r, resample_step_length):
         graph.save(out_dir/(case_name+'_graph.vtp'))
         val = input("Is there a fenestration in this case? [y/n]: ")
         centerlines = vmtk.centerline_geometry(centerlines)
-        centerlines.save(out_dir/(case_name+'_cl_centerline_graph_vmtk.vtp'))
+        centerlines.save(graphed_cl_file)
         if val == 'y':
             sys.exit()
         
