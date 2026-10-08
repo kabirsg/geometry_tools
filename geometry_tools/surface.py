@@ -227,6 +227,59 @@ class Surfer():
         self.outlet_points = [centers[i] for i in outlet_ids]
         return centers_m, inlet_ids, outlet_ids
 
+    def check_surface_topology(self):
+        """ Warn about surface problems that break vmtkNetworkExtraction
+        ("can't reconstruct new profile"). Only prints, never modifies the surface.
+
+        Returns True if no problems were found.
+        """
+        surf = self.surf.triangulate()
+        problems = []
+
+        #Repeated triangles make every edge non-manifold
+        faces = surf.faces.reshape(-1, 4)[:, 1:]
+        n_dup = len(faces) - len(np.unique(np.sort(faces, axis=1), axis=0))
+        if n_dup:
+            problems.append(f'{n_dup} duplicate faces (see common.remove_duplicate_faces)')
+
+        #Edges shared by more than two triangles
+        non_manifold = surf.extract_feature_edges(boundary_edges=False, feature_edges=False,
+                                                  manifold_edges=False, non_manifold_edges=True)
+        if non_manifold.n_cells:
+            problems.append(f'{non_manifold.n_cells} non-manifold edges')
+
+        #Zero-area triangles give degenerate sphere intersections
+        areas = surf.compute_cell_sizes(length=False, volume=False).cell_data['Area']
+        n_degen = int(np.sum(areas < 1e-12 * areas.max()))
+        if n_degen:
+            problems.append(f'{n_degen} zero-area triangles')
+
+        #Disconnected pieces (floating slivers left by the clip, etc.)
+        n_regions = len(np.unique(surf.connectivity().point_data['RegionId']))
+        if n_regions > 1:
+            problems.append(f'surface has {n_regions} disconnected regions')
+
+        #Each open boundary should be a simple closed loop: every boundary vertex on exactly two boundary edges
+        edges = surf.extract_feature_edges(boundary_edges=True, feature_edges=False, manifold_edges=False)
+        if edges.n_cells:
+            _, degree = np.unique(edges.lines.reshape(-1, 3)[:, 1:], return_counts=True)
+            n_bad = int(np.sum(degree != 2))
+            if n_bad:
+                problems.append(f'{n_bad} boundary vertices not on a simple closed loop (jagged/pinched clip edge)')
+            n_loops = len(np.unique(edges.connectivity().point_data['RegionId']))
+            if self.inlet_points is not None and self.outlet_points is not None:
+                n_expected = len(self.inlet_points) + len(self.outlet_points)
+                if n_loops != n_expected:
+                    problems.append(f'{n_loops} open boundaries but {n_expected} inlets + outlets (holes in the surface?)')
+        else:
+            problems.append('no open boundaries')
+
+        if problems:
+            print('WARNING: surface problems that can cause "can\'t reconstruct new profile" in the network extractor:')
+            for p in problems:
+                print(f'  - {p}')
+        return not problems
+
     def get_open_profiles(self):
         """ Get centers of open profiles
         """
@@ -375,6 +428,7 @@ class Surfer():
         """
         Generate centerlines using the network extractor. This won't cause merging issues.
         """
+        self.check_surface_topology()
         self.centerlines, _ = vmtk.network_extractor(self.surf, ratio=1.01)
         self.centerlines = vmtk.centerline_geometry(self.centerlines)
 
