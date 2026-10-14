@@ -38,21 +38,20 @@ def define_fr(obj_pt, flowrate=5.578888889):
     obj_pt.surf.point_data[obj_pt.name][ids]=flowrate
     return obj_pt.surf
 
-def mapped_info(prep_dir, sss, ss, lab, fen, syl, emissary, condylar):
-    out_dir = prep_dir.parent
-    #surf0_file = sorted(prep_dir.glob('*_noext.vtp'))[0]
-    surf_file = sorted(prep_dir.glob('*_cl.vtp'))[0]
-    remeshed_file = out_dir/(surf_file.stem  +'_remeshed.vtp')
+def mapped_info(prep_dir, case_name, sss, ss, lab, fen, syl, emissary, condylar):
     dec = str(int(round(float(sss) - int(float(sss)), 1)*10))
-    #cent_graph_file = out_dir/(surf_file.stem  +'_centerline_graph_' + str(int(float(sss))) + 'p' + dec + '.vtp')
-    #graphed_cl_file = out_dir/(surf_file.stem +'_centerline_graph.vtp')
-    cent_graph_vmtk = out_dir/(surf_file.stem +'_centerline_graph_vmtk.vtp')
-    cent_file = out_dir/(surf_file.stem + '__' + str(int(float(sss))) + 'p' + dec + 'centerline_mapped.vtp')
-    mapped_file = out_dir/(surf_file.stem + '_' + str(int(float(sss))) + 'p' + dec + '_mappedsys.vtp')
-    planes_files = out_dir/(surf_file.stem + '_planes_' + str(int(float(sss))) + 'p' + dec + '.vtm')
+    out_dir = prep_dir.parent
+    case_path = str(prep_dir/Path(case_name))
+    #File names for existing files that the script will use
+    surf_file = sorted(prep_dir.glob('*_cl.vtp'))[0]
+    remeshed_file = out_dir/(case_name  +'_remeshed.vtp')
+    cent_graph_vmtk = out_dir/(case_name+'_cl_centerline_graph_vmtk.vtp')
+    #File names for newly created files
+    cent_file = out_dir/(case_name + '__' + str(int(float(sss))) + 'p' + dec + 'centerline_mapped.vtp')
+    mapped_file = out_dir/(case_name + '_' + str(int(float(sss))) + 'p' + dec + '_mappedsys.vtp')
+    planes_files = out_dir/(case_name + '_planes_' + str(int(float(sss))) + 'p' + dec + '.vtm')
     if not mapped_file.exists():
         print("No mapped file")
-        #surf = pv.read(surf0_file) #use unprepped surface for the centerline map
         if not remeshed_file.exists(): #use remeshed surface
             surf = vmtk.surface_remeshing(pv.read(surf_file), edgelength=0.5, iterations=5)
             surf.save(remeshed_file)
@@ -63,8 +62,7 @@ def mapped_info(prep_dir, sss, ss, lab, fen, syl, emissary, condylar):
                 surf,
                 include_aneurysms=False
                 )
-        #m.clip_boundaries()
-        #print(cent_file)
+
         if not cent_file.exists():
             print("Remaking centerlines")
             m.centerlines = pv.read(cent_graph_vmtk)
@@ -254,30 +252,12 @@ def mapped_info(prep_dir, sss, ss, lab, fen, syl, emissary, condylar):
     m.surf.save(mapped_file)
 
 if __name__ == "__main__":
-    # prep_dir = Path(sys.argv[1]) 
-    # print(type(prep_dir))
-    # if len(sys.argv)>3:
-    #     sss = sys.argv[2]
-    #     ss=sys.argv[3]
-    #     lab=sys.argv[4]
-    #     fen=sys.argv[5]
-    #     syl= sys.argv[6]
-    #     emissary = sys.argv[7]
-    #     condylar = sys.argv[8]
-    # else:
-    #     sss = sys.argv[2]#6.816019219
-    #     ss='False'
-    #     lab='False'
-    #     fen='False'
-    #     syl = 'False'
-    #     emissary='False'
-    #     condylar = 'False'
-    use_parser = True
     if len(sys.argv) == 1:
         try:
             import config
             prep_dir = Path(config.mid_prep_dir)
             print(f"Using the settings outlined in the config.py file - prep directory: {prep_dir}")
+            case_name = config.mid_case_name
             sss = config.mid_sss
             ss = config.mid_ss
             labbe = config.mid_lab
@@ -285,13 +265,24 @@ if __name__ == "__main__":
             syl = config.mid_syl
             emi = config.mid_emissary
             con = config.mid_condylar
-            use_parser = False
         except Exception as e:
             print(f"Error: {e}")
-            print("Failed to use config file for settings - switching to using the arguments provided")
-    if use_parser:
+            print("Failed to use config file for settings")
+        mapped_info(
+            prep_dir=prep_dir,
+            case_name=case_name,
+            sss=sss,
+            ss=ss,
+            lab=labbe,
+            fen=fen,
+            syl=syl,
+            emissary=emi,
+            condylar=con
+        )
+    else:
         parser = argparse.ArgumentParser(description="Arguments for map_info_direct.\nClip folder location must be provided\nFor all present vessels, an inlet flow rate must be provided. If the vessel is not in the model, either don't enter it's flag or enter False for that vessel")
         parser.add_argument('prep_dir', help='Location to the clip folder (output of surface prep file)')
+        parser.add_argument('case_name', help="")
         parser.add_argument('-sss', '--superior-saggital-sinus', required=False, type=float, default=6.816019219, help='Flow rate through the inlet superior saggital sinus (the peak systolic inlet flow rate)')
         parser.add_argument('-ss', '--sigmoid-sinus', required=False, default='False', help='Flow rate through the sigmoid sinus')
         parser.add_argument('-l', '--labbe', required=False, default='False', help='Flow Rate through Labbe')
@@ -300,6 +291,14 @@ if __name__ == "__main__":
         parser.add_argument('-c', '--condylar-vein', required=False, default='False', help='Flow rate through the condylar vein')
         parser.add_argument('-f', '--fenestration-stenosis', required=False, default='False', help='Boolean (True or False) indicating the presence of a fenestration stenosis')
         args = parser.parse_args()
-        mapped_info(prep_dir=Path(args.prep_dir), sss = args.superior_sigmoid_sinus, ss = args.sigmoid_sinus, lab = args.labbe, fen = args.fenestration_stenosis, syl = args.sylvian_vein, emissary=args.emissary_vein, condylar=args.condylar_vein)    
-    else:
-        mapped_info(prep_dir=prep_dir,sss=sss,ss=ss,lab=labbe,fen=fen,syl=syl,emissary=emi,condylar=con)
+        mapped_info(
+            prep_dir=Path(args.prep_dir),
+            case_name=args.case_name,
+            sss = args.superior_sigmoid_sinus,
+            ss = args.sigmoid_sinus,
+            lab = args.labbe,
+            fen = args.fenestration_stenosis,
+            syl = args.sylvian_vein,
+            emissary=args.emissary_vein,
+            condylar=args.condylar_vein
+        )
