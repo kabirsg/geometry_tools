@@ -18,7 +18,7 @@ from scipy.spatial import cKDTree as KDTree
 from pathlib import Path
 import sys
 
-def make_cl(prep_dir, case_name, edge_length, iters, r, resample_step_length):
+def make_cl(prep_dir, case_name, edge_length, iters, r, resample_step_length, fen = None):
     out_dir = prep_dir.parent
     surf_file = sorted(prep_dir.glob('*cl.vtp'))[0]
     surf=pv.read(surf_file)
@@ -39,11 +39,15 @@ def make_cl(prep_dir, case_name, edge_length, iters, r, resample_step_length):
         # m.centerlines.save(out_dir/(case_name+'_centerline.vtp'))
         # m.centerlines = vmtk.centerlines_smooth(m.centerlines, iterations=1, sm_factor=0.1)
         graph.save(out_dir/(case_name+'_graph.vtp'))
-        val = input("Is there a fenestration in this case? [y/n]: ")
         centerlines = vmtk.centerline_geometry(centerlines)
         centerlines.save(graphed_cl_file)
-        if val == 'y':
-            sys.exit()
+        if fen != False:
+            if fen == True:
+                return
+            else:
+                val = input("Is there a fenestration in this case? [y/n]: ")
+                if val == 'y':
+                    sys.exit()
         
         #use vmtk for each segment
         m.centerlines = pv.PolyData()
