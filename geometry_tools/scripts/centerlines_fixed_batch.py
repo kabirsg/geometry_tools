@@ -22,6 +22,8 @@ CASES = [
 ]
 
 def main():
+    success_cases = []
+    failed_cases = []
     for case in CASES:
         print(f'Starting {case["case_name"]}...')
         try:
@@ -34,11 +36,15 @@ def main():
                 resample_step_length=case["resample_step_length"],
                 fen=case["fen"]
             )
+            success_cases.append(case["case_name"])
         except Exception as e:
             print("="*50)
             print(f"ERROR ON CASE {case['case_name']}: {e}")
             print("="*50)
         print(f'Finished {case["case_name"]}!')
+
+    print(f"Successfully generated centerlines for: {success_cases}")
+    print(f"Failed to generate centerlines for: {failed_cases} ")
 
 if __name__ == "__main__":
     main()
