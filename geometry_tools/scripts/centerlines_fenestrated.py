@@ -37,6 +37,112 @@ RADIUS = 'MaximumInscribedSphereRadius'
 TRACE_STEP = 0.2 #Point spacing used while tracing and checking segments, before the final resampling
 RATIOS_TO_TRY = [1.01, 1.05, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6] #Network extraction ratios tried when the given one misses a fenestration
 
+class SegmentTracer():
+    '''
+    Runs vmtkcenterlines between two points inside the vessel. The Delaunay tessellation and Voronoi
+    diagram are computed once and reused for every segment, rather than on every call like
+    vmtk_wrapper.centerlines does
+    '''
+    def __init__(self, surf):
+        #Same small perturbation as vmtk_wrapper.centerlines, to avoid the vmtkcenterlines bug with perfectly straight flow extensions
+        #Copy first, compute_normals shares its points with the input so this would move the caller's surface too
+        surf = surf.copy().compute_normals()
+        noise = np.random.RandomState(0).normal(0, 0.005, surf.n_points)
+        surf.points = surf.points + surf.point_data['Normals']*noise[:, None]
+        self.surf = surf
+
+        print("Computing the Delaunay tessellation and Voronoi diagram...")
+        dv = vmtkscripts.vmtkDelaunayVoronoi()
+        dv.Surface = surf
+        dv.Execute()
+        self.delaunay, self.voronoi, self.pole_ids = dv.DelaunayTessellation, dv.VoronoiDiagram, dv.PoleIds
+        #Pole of a surface point = centre of the largest inscribed sphere touching it, so these sit along the middle of the lumen
+        poles = [self.pole_ids.GetId(i) for i in range(surf.n_points)] #only assigns poles to original surface points, not the caps that are created by vmtkDelaunayVoronoi, which are appended to the end
+        self.pole_tree = KDTree(pv.wrap(self.voronoi).points[poles])
+
+    def seed(self, point):
+        '''Surface point whose pole is closest to point, so the path starts/ends at that spot in the lumen and not at the wall'''
+        return int(self.pole_tree.query(point)[1])
+
+    def trace(self, start, end):
+        '''Centerline points and radii from start to end, or None if vmtk couldn't find a path'''
+        cl = vmtkscripts.vmtkCenterlines()
+        cl.Surface = self.surf
+        cl.SeedSelectorName = 'idlist'
+        cl.SourceIds = [self.seed(start)]
+        cl.TargetIds = [self.seed(end)]
+        cl.Resampling = 1
+        cl.ResamplingStepLength = TRACE_STEP
+        cl.AppendEndPoints = 0
+        cl.StopFastMarchingOnReachingTarget = 1
+        cl.DelaunayTessellation = self.delaunay
+        cl.VoronoiDiagram = self.voronoi
+        cl.PoleIds = self.pole_ids
+        cl.Execute()
+        path = pv.wrap(cl.Centerlines)
+        if path.n_points < 2:
+            return None
+        pts, r = np.array(path.points), np.array(path.point_data[RADIUS])
+        if np.linalg.norm(pts[0]-start) > np.linalg.norm(pts[-1]-start): #vmtk traces from the target back to the source
+            pts, r = pts[::-1], r[::-1]
+        return pts, r
+
+class SegmentCenterlines():
+    '''Traces every network segment with vmtkcenterlines and checks each piece stays on its own segment'''
+    def __init__(self, tracer, segments, edges, nodes, max_splits, stray_fraction):
+        self.tracer = tracer
+        self.segments = segments
+        self.edges = edges
+        self.nodes = nodes
+        self.max_splits = max_splits
+        self.stray_fraction = stray_fraction
+
+        #Lookups to tell which network segment a point is on
+        self.net_tree = KDTree(np.vstack([pts for pts, _ in segments]))
+        self.net_seg = np.concatenate([np.full(len(pts), i) for i, (pts, _) in enumerate(segments)])
+        self.seg_trees = [KDTree(pts) for pts, _ in segments]
+        #Network radius is 0 at the openings, so don't let the allowed distance go below half the typical radius
+        self.seg_radius = [np.maximum(r, 0.5*np.median(r)) for _, r in segments]
+
+    def stray(self, path, seg):
+        '''Fraction of path points that sit on a different network segment instead of their own'''
+        _, nearest = self.net_tree.query(path)
+        d_own, i_own = self.seg_trees[seg].query(path)
+        off = (self.net_seg[nearest] != seg) & (d_own > self.seg_radius[seg][i_own])
+        return off.mean()
+
+    def trace_piece(self, seg, a, b, depth):
+        '''Trace the part of segment seg between fractions a and b of its length, splitting it in half if the path strays'''
+        pts, r = self.segments[seg]
+        path = self.tracer.trace(point_at(pts, a), point_at(pts, b))
+        if path is not None and self.stray(path[0], seg) <= self.stray_fraction:
+            return [path], False
+        if depth == self.max_splits:
+            #Out of splits, use the network line for this piece so the segment is still complete
+            s = arc_length(pts)/arc_length(pts)[-1]
+            keep = (s >= a) & (s <= b)
+            piece = np.vstack([point_at(pts, a), pts[keep], point_at(pts, b)])
+            return [(piece, np.interp(np.r_[a, s[keep], b], s, r))], True
+        m = (a+b)/2
+        first, fb1 = self.trace_piece(seg, a, m, depth+1)
+        second, fb2 = self.trace_piece(seg, m, b, depth+1)
+        return first + second, fb1 or fb2
+
+    def trace_segment(self, seg, n_pieces):
+        '''Centerline for one network segment, starting with n_pieces equal pieces'''
+        pieces, used_fallback = [], False
+        for k in range(n_pieces):
+            p, fb = self.trace_piece(seg, k/n_pieces, (k+1)/n_pieces, depth=0)
+            pieces += p
+            used_fallback = used_fallback or fb
+        #Join the pieces, each one starts where the last one ended so drop the repeated point
+        pts = np.vstack([pieces[0][0]] + [p[1:] for p, _ in pieces[1:]])
+        r = np.concatenate([pieces[0][1]] + [r[1:] for _, r in pieces[1:]])
+        #Make sure the ends are exactly on the graph nodes so segments meet at the junctions
+        u, v = self.edges[seg]
+        pts[0], pts[-1] = self.nodes[u], self.nodes[v]
+        return pts, r, len(pieces), used_fallback
+
 def split_lines(lines):
     '''Point ids of every cell in a pyvista lines array'''
     cells, i = [], 0
@@ -129,116 +235,11 @@ def find_loops(edges, active, n_nodes):
     n_loops = active.sum() - len(used_nodes) + len(np.unique(label[used_nodes]))
     return loop_ids, n_loops
 
-class SegmentTracer():
-    '''
-    Runs vmtkcenterlines between two points inside the vessel. The Delaunay tessellation and Voronoi
-    diagram are computed once and reused for every segment, rather than on every call like
-    vmtk_wrapper.centerlines does
-    '''
-    def __init__(self, surf):
-        #Same small perturbation as vmtk_wrapper.centerlines, to avoid the vmtkcenterlines bug with perfectly straight flow extensions
-        #Copy first, compute_normals shares its points with the input so this would move the caller's surface too
-        surf = surf.copy().compute_normals()
-        noise = np.random.RandomState(0).normal(0, 0.005, surf.n_points)
-        surf.points = surf.points + surf.point_data['Normals']*noise[:, None]
-        self.surf = surf
-
-        print("Computing the Delaunay tessellation and Voronoi diagram...")
-        dv = vmtkscripts.vmtkDelaunayVoronoi()
-        dv.Surface = surf
-        dv.Execute()
-        self.delaunay, self.voronoi, self.pole_ids = dv.DelaunayTessellation, dv.VoronoiDiagram, dv.PoleIds
-        #Pole of a surface point = centre of the largest inscribed sphere touching it, so these sit along the middle of the lumen
-        poles = [self.pole_ids.GetId(i) for i in range(surf.n_points)]
-        self.pole_tree = KDTree(pv.wrap(self.voronoi).points[poles])
-
-    def seed(self, point):
-        '''Surface point whose pole is closest to point, so the path starts/ends at that spot in the lumen and not at the wall'''
-        return int(self.pole_tree.query(point)[1])
-
-    def trace(self, start, end):
-        '''Centerline points and radii from start to end, or None if vmtk couldn't find a path'''
-        cl = vmtkscripts.vmtkCenterlines()
-        cl.Surface = self.surf
-        cl.SeedSelectorName = 'idlist'
-        cl.SourceIds = [self.seed(start)]
-        cl.TargetIds = [self.seed(end)]
-        cl.Resampling = 1
-        cl.ResamplingStepLength = TRACE_STEP
-        cl.AppendEndPoints = 0
-        cl.StopFastMarchingOnReachingTarget = 1
-        cl.DelaunayTessellation = self.delaunay
-        cl.VoronoiDiagram = self.voronoi
-        cl.PoleIds = self.pole_ids
-        cl.Execute()
-        path = pv.wrap(cl.Centerlines)
-        if path.n_points < 2:
-            return None
-        pts, r = np.array(path.points), np.array(path.point_data[RADIUS])
-        if np.linalg.norm(pts[0]-start) > np.linalg.norm(pts[-1]-start): #vmtk traces from the target back to the source
-            pts, r = pts[::-1], r[::-1]
-        return pts, r
-
-class SegmentCenterlines():
-    '''Traces every network segment with vmtkcenterlines and checks each piece stays on its own segment'''
-    def __init__(self, tracer, segments, edges, nodes, max_splits, stray_fraction):
-        self.tracer = tracer
-        self.segments = segments
-        self.edges = edges
-        self.nodes = nodes
-        self.max_splits = max_splits
-        self.stray_fraction = stray_fraction
-
-        #Lookups to tell which network segment a point is on
-        self.net_tree = KDTree(np.vstack([pts for pts, _ in segments]))
-        self.net_seg = np.concatenate([np.full(len(pts), i) for i, (pts, _) in enumerate(segments)])
-        self.seg_trees = [KDTree(pts) for pts, _ in segments]
-        #Network radius is 0 at the openings, so don't let the allowed distance go below half the typical radius
-        self.seg_radius = [np.maximum(r, 0.5*np.median(r)) for _, r in segments]
-
-    def stray(self, path, seg):
-        '''Fraction of path points that sit on a different network segment instead of their own'''
-        _, nearest = self.net_tree.query(path)
-        d_own, i_own = self.seg_trees[seg].query(path)
-        off = (self.net_seg[nearest] != seg) & (d_own > self.seg_radius[seg][i_own])
-        return off.mean()
-
-    def trace_piece(self, seg, a, b, depth):
-        '''Trace the part of segment seg between fractions a and b of its length, splitting it in half if the path strays'''
-        pts, r = self.segments[seg]
-        path = self.tracer.trace(point_at(pts, a), point_at(pts, b))
-        if path is not None and self.stray(path[0], seg) <= self.stray_fraction:
-            return [path], False
-        if depth == self.max_splits:
-            #Out of splits, use the network line for this piece so the segment is still complete
-            s = arc_length(pts)/arc_length(pts)[-1]
-            keep = (s >= a) & (s <= b)
-            piece = np.vstack([point_at(pts, a), pts[keep], point_at(pts, b)])
-            return [(piece, np.interp(np.r_[a, s[keep], b], s, r))], True
-        m = (a+b)/2
-        first, fb1 = self.trace_piece(seg, a, m, depth+1)
-        second, fb2 = self.trace_piece(seg, m, b, depth+1)
-        return first + second, fb1 or fb2
-
-    def trace_segment(self, seg, n_pieces):
-        '''Centerline for one network segment, starting with n_pieces equal pieces'''
-        pieces, used_fallback = [], False
-        for k in range(n_pieces):
-            p, fb = self.trace_piece(seg, k/n_pieces, (k+1)/n_pieces, depth=0)
-            pieces += p
-            used_fallback = used_fallback or fb
-        #Join the pieces, each one starts where the last one ended so drop the repeated point
-        pts = np.vstack([pieces[0][0]] + [p[1:] for p, _ in pieces[1:]])
-        r = np.concatenate([pieces[0][1]] + [r[1:] for _, r in pieces[1:]])
-        #Make sure the ends are exactly on the graph nodes so segments meet at the junctions
-        u, v = self.edges[seg]
-        pts[0], pts[-1] = self.nodes[u], self.nodes[v]
-        return pts, r, len(pieces), used_fallback
-
 def extract_network(surf, ratios, genus):
     '''
     Run vmtknetworkextraction with each ratio in turn until the network has one loop per fenestration.
     Network extraction is quick, but whether it finds both sides of a fenestration depends on the ratio.
+    When the ratio changes, the network points will change, which can change if a small branch is detected.
     If none match, the network with too many loops is preferred (the extras can be removed after tracing)
     '''
     best = None
@@ -282,6 +283,7 @@ def remove_duplicate_loops(traced, edges, active, n_nodes, genus, min_coverage=0
     return loop_ids, n_loops
 
 def make_cl(prep_dir, case_name, edge_length, iters, r, resample_step_length, max_splits=3, stray_fraction=0.2):
+    #Setting paths
     out_dir = prep_dir.parent
     surf_file = sorted(prep_dir.glob('*cl.vtp'))[0]
     remeshed_file = out_dir/(case_name+'_remeshed.vtp')
@@ -289,6 +291,7 @@ def make_cl(prep_dir, case_name, edge_length, iters, r, resample_step_length, ma
     graphed_cl_file = out_dir/(case_name+'_cl_centerline_graph_vmtk.vtp')
     resampled_file = out_dir/(case_name+'_centerline_resampled.vtp')
 
+    #Remeshing surface if not already done
     if not remeshed_file.exists():
         surf = pv.read(surf_file)
         surf = vmtk.surface_remeshing(surf, edgelength=edge_length, iterations=iters)
@@ -297,6 +300,7 @@ def make_cl(prep_dir, case_name, edge_length, iters, r, resample_step_length, ma
         surf = pv.read(remeshed_file) #Surface taking existing remeshed file
     surf = surf.triangulate().clean() #Cleaning up the surface just in case
 
+    #Finding the number of openings and fenestrations
     genus, n_open = surface_genus(surf)
     print(f"Surface has {n_open} openings and {genus} fenestration(s)")
 
