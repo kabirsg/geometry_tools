@@ -1,16 +1,37 @@
-import vtk 
-import numpy as np 
-import pyvista as pv 
-from scipy.spatial import cKDTree as KDTree 
+""" Shared helpers used by the surface, meshing and script modules.
+
+Most of these work directly on PyVista objects and don't need VMTK.
+
+- **Interactive selection tools** (open a PyVista window):
+    `ClickDragSelect` and `ClickDragDelete` (pick or delete cells by dragging a box),
+    `SelectGeodesic` (draw closed loops on a surface to make a mask),
+    `RefinementSelection` (mark a refinement region for `make_mesh.py`) and
+    `Label_CLs` (label centerline branches for the `map_info` scripts).
+- **Mesh sizing:** `create_edge_size_array` builds the `Size` array used for remeshing and volume
+    meshing.
+- **Smoothing and neighbour maps:** `smooth_mesh_data`, `smooth_mesh_data_local`,
+    `smooth_mesh_data_local_alt`, `get_neighbour_map` and `get_neighbour_map_alt`.
+- **Flow extensions:** `Flow_Extender` extrudes the outlets, sized from each opening's effective
+    radius.
+- **Centerline and network utilities:** `get_network_endpoints`, `split_network_into_cells`,
+    `get_mean_radii`, `lines_from_points` and `polyline_from_points`.
+- **Surface clean-up:** `remove_duplicate_faces`, `decimate_edge_length`, `copy_arrays`,
+    `fix_vmtk_group_ids` and `vtk_taubin_smooth`.
+"""
+import vtk
+import numpy as np
+import pyvista as pv
+from scipy.spatial import cKDTree as KDTree
 from scipy.interpolate import interp1d
 import warnings
 from typing import Optional
-        
-# from pathlib import Path 
-# import h5py 
-# import ast 
+
+# from pathlib import Path
+# import h5py
+# import ast
 
 def warning_on_one_line(message, category, filename, lineno, file=None, line=None):
+    """ Format warnings on one line. Assign to `warnings.formatwarning` to use it. """
     return '%s:%s: %s: %s\n' % (filename, lineno, category.__name__, message)
 
 
@@ -326,6 +347,12 @@ def get_neighbour_map(surf):#, n_points):
     return neighbour_pt_ids
 
 def get_neighbour_map_alt(surf):
+    """ Find the neighbours of every point, looking through the cells that use it.
+
+    Returns a list with one array per point, holding the IDs of every other point that shares a
+    cell with it. For triangle surfaces this gives the same neighbours as `get_neighbour_map`, which
+    follows edges instead and matches points by position.
+    """
     neighbour_pt_ids = [] #empty list for storing numpy arrays
     
     for ind in range(surf.n_points):
@@ -338,6 +365,7 @@ def get_neighbour_map_alt(surf):
     return neighbour_pt_ids #list of numpy arrays
         
 def point_cell_ids(surf, ind):
+    """ Return the IDs of the cells that use point `ind`. """
     ids = vtk.vtkIdList()
     surf.GetPointCells(ind, ids)
     return [ids.GetId(i) for i in range(ids.GetNumberOfIds())]
@@ -461,13 +489,15 @@ class RefinementSelection():
         self.surf = surf
         self.title = title
         self.name = name
-        
+
     def select(self):
+        """ Open the picker. Picked cells get True in the `name` cell array. """
         self.surf.cell_data[self.name] = np.zeros(self.surf.n_cells, dtype=bool)
         select = ClickDragSelect(self.surf, title = self.title)
         self.surf.cell_data[self.name]=select.mesh.cell_data['PickedMask']
 
     def define_surface(self):
+        """ Copy the selection to the `name` point array: points of picked cells get True. """
         self.surf.point_data[self.name] = np.zeros(self.surf.n_points, dtype=bool)
         cell_ids = self.surf.faces.reshape(-1, 4)[self.surf.cell_data[self.name]==1][:,1:]
         ids = cell_ids.flatten()
@@ -681,6 +711,17 @@ class SacSelectTool():
     
 
 class SelectGeodesic():
+    """ Draw closed loops of geodesic lines on a surface to build a point mask.
+
+    Call `SelectGeodesic.interact` to open the window; the keys are listed in it. Consecutive picked points are joined by the shortest path over the surface.
+    `space` closes the loop and splits the surface along it, and the points on the smaller side get 1 in the `scalars` point array.
+    `a` keeps the current mask and starts a new loop,
+    `u` undoes the last point,
+    `c` clears the current loop, and 
+    `x` cuts out and refills the masked region.
+
+    After closing the window, `self.mesh` holds the surface with the mask.
+    """
     def __init__(self, mesh, scalars='Mask'):
         mesh = mesh.clean()
         mesh = mesh.compute_normals(auto_orient_normals=True)
@@ -700,6 +741,7 @@ class SelectGeodesic():
         self.tree = KDTree(self.mesh.points)
         
     def interact(self, title='Isolate aneurysms.'):
+        """ Open the selection window. Returns the picked loops as a MultiBlock of points. """
         self.interactive = True
         self.p = pv.Plotter() 
         self.mesh = self.mesh.compute_normals()
@@ -958,6 +1000,7 @@ class SelectGeodesic():
         return points
 
     def use_stored_points(self, points):
+        """ Rebuild the mask from loops saved earlier (see `save_stored_points`), without the window. """
         for pts in points:
             self.picked_points = pts.points
             self.update_points()
@@ -1048,6 +1091,12 @@ class ClickDragDelete:
 
 
 class ClickDragSelect:
+    """ Click and drag to pick cells.
+
+    The window opens as soon as the object is created. Press `r` to switch between rotating and
+    picking, and `c` to clear the selection. After the window closes, picked cells have True in
+    `self.mesh.cell_data['PickedMask']`. `ClickDragDelete` is the same tool but deletes the cells.
+    """
     def __init__(self, mesh, title='Pick Points to Enlarge Mesh'):
         self.plotter = pv.Plotter()
         self.plotter.add_text(title, position='upper_left', font_size=18)
@@ -1138,8 +1187,7 @@ class ClickToDelete():
         self.display()
 
 def get_network_endpoints(network):
-    """ Get terminal points of network
-    """
+    """ Get terminal points of network"""
     # First, get all unique endpoints in the network
     endpoints = []
     cells = []
@@ -1169,6 +1217,7 @@ def get_network_endpoints(network):
     return network_endpoints
 
 def split_network_into_cells(network):
+    """ Return each cell (line) of a centerline network as its own mesh, in a list. """
     cells = []
     for ndx in range(network.n_cells):
         cell_mask = np.zeros(network.n_cells, dtype=bool)
@@ -1233,6 +1282,7 @@ def polyline_from_points(points):
     return poly
 
 def check_mem_usage():
+    """ Print the memory this process is using, in MB. Needs psutil. """
     import psutil
     import os
     p = psutil.Process(os.getpid())
@@ -1285,6 +1335,12 @@ def remove_duplicate_faces(surf):
     return out.clean()
 
 def decimate_edge_length(surf, target_edge_length):
+    """ Decimate a surface toward a target mean edge length, keeping its arrays.
+
+    The reduction is `1 - mean_edge_length / target_edge_length`, so this only coarsens: the target
+    must be larger than the current mean edge length. The result is approximate. Arrays are copied
+    over with `copy_arrays`.
+    """
     edges = surf.extract_all_edges()
     mean_el = edges.compute_cell_sizes().cell_data['Length'].mean()
     target_el = target_edge_length
@@ -1294,6 +1350,12 @@ def decimate_edge_length(surf, target_edge_length):
     return surf
 
 def copy_arrays(src, dst):
+    """ Copy every point and cell array from `src` onto `dst`, by nearest neighbour.
+
+    Each point of `dst` takes the point values of the nearest point of `src`, and each cell takes
+    the values of the `src` cell with the nearest center. Useful after remeshing or decimating.
+    Modifies and returns `dst`.
+    """
     tree = KDTree(src.points)
     _, ii = tree.query(dst.points, k=1)
     for arr in src.point_data:
@@ -1382,6 +1444,17 @@ def get_normal_component(surf, array='u', normals='Normals',):
     return surf
 
 class Flow_Extender():
+    """ Add flow extensions to the outlets of a clipped surface.
+
+    Each outlet is extruded along the nearest centerline tangent (`FrenetTangent`) for `length`
+    times its effective diameter, where the effective radius is `sqrt(area / pi)` of the opening.
+    Inlets are matched to `inlet_points` and are not extended here.
+
+    Usage: `Flow_Extender(surf, centerlines, inlet_points=..., outlet_points=...).add_outlet_flow_ext()`.
+    A window then shows the result with each outlet labelled; press `r` then `q` to reject it
+    (sets `self.accept` to False), or `q` to accept. Use `Flow_Extender.flip_outlets` to redo outlets
+    that were extruded the wrong way. The extended surface is in `self.surf`.
+    """
     def __init__(self, surf = None, centerlines = None, inlet_points: Optional[np.ndarray] = None, outlet_points: Optional[np.ndarray] = None,length = 2):
         self.surf = surf
         #self.surf_og=surf
@@ -1397,20 +1470,19 @@ class Flow_Extender():
         self.inlet_points_in = inlet_points
         self.outlet_points_in = outlet_points
 
-    '''
-    Runs the three functions that are required to create a Flow Extension on the outlet only
-    '''
     def add_outlet_flow_ext(self):
+        """ Add flow extensions to the outlets (not the inlets). Returns self. """
         self.get_boundary_pts()
         self.get_normal_radius_effective()
         self.extrude()
         return self
 
-    '''
-    Redoes the outlet flow extensions with the given outlet indices flipped (toggled relative to the
-    current direction, so flipping the same index twice returns it to the original direction)
-    '''
     def flip_outlets(self, flip_ids):
+        """ Redo the outlet flow extensions with the given outlets extruded the other way.
+
+        `flip_ids` are the outlet numbers shown in the inspection window. Flips toggle, so flipping
+        the same outlet twice returns it to its original direction. Returns self.
+        """
         self.flip_ids ^= set(flip_ids)
         self.surf = self.surf_in
         self.inlet_points = self.inlet_points_in
@@ -1418,10 +1490,8 @@ class Flow_Extender():
         self.accept = True
         return self.add_outlet_flow_ext()
 
-    '''
-    Finds every open end of the surface
-    '''
     def get_boundary_pts(self):
+        """ Find the boundary ring of every open end (inlets and outlets) and store them in `self.profiles`. """
         #Pulling out boundary edges
         edges = self.surf.extract_feature_edges(boundary_edges=True, feature_edges=False, manifold_edges=False)
         #Giving each ring a RegionID
@@ -1435,6 +1505,11 @@ class Flow_Extender():
         self.profiles = pv.MultiBlock([edges.extract_points(m) for m in masks]) #Has n_inlets + n_outlets entries
 
     def get_normal_radius_effective(self):
+        """ Work out each opening's effective radius, extension length and direction.
+
+        Splits the openings into inlets and outlets by matching them to `self.inlet_points`, and
+        replaces the inlet and outlet points with the ring centers.
+        """
         self.radii = np.empty(len(self.profiles))
         self.lengths = np.empty(len(self.profiles))
         self.prof_surf=pv.MultiBlock()
@@ -1475,6 +1550,7 @@ class Flow_Extender():
         self.out_normals = -self.centerlines.point_data['FrenetTangent'][out_ids]
 
     def extrude(self):
+        """ Extrude each outlet, merge the extensions into `self.surf`, and show the result for inspection. """
         #Keeping the ring centers (before they get replaced by the extension ends) for labelling outlets
         self.outlet_centers = np.array(self.outlet_points)
         #Looping through the list of outlet centers (everywhere that needs a flow extension)

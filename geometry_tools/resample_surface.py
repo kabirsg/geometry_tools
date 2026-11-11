@@ -1,3 +1,9 @@
+""" Repair messy surfaces by resampling them to an image and re-contouring.
+
+`Resampler` decimates a surface, voxelizes it, contours the voxels back into a surface, smooths it,
+and cleans it up with pymeshfix. Use it on segmentations with holes, self-intersections or junk
+points before running `surface_prep.py`. Needs pymeshfix but not VMTK.
+"""
 import pyvista as pv 
 import numpy as np 
 from pathlib import Path
@@ -12,11 +18,18 @@ class Resampler():
         self.resample_spacing = resample_spacing
 
     def remove_junk_points(self, thresh=1e4):
+        """ Remove points with any coordinate beyond +/- `thresh`, then keep the largest connected piece. """
         junk_points = np.unique(np.where(np.abs(self.surf.points) > thresh)[0])
         self.surf, _ = self.surf.remove_points(junk_points)
         self.surf = self.surf.extract_largest()
 
     def fix(self):
+        """ Resample `self.surf` and store the repaired surface back in `self.surf`.
+
+        Decimates to at most about 75,000 points, voxelizes with spacing `resample_spacing`,
+        contours, applies Taubin smoothing, decimates again and repairs the result with pymeshfix.
+        The grid is kept in `self.grid`.
+        """
         # Decimate the surface
         surf = self.surf 
 
