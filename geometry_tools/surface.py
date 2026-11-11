@@ -1,6 +1,20 @@
-from networkx.algorithms.dag import ancestors
-from networkx.algorithms.distance_measures import center
-from networkx.algorithms.lowest_common_ancestors import lowest_common_ancestor
+""" Surface operations on vessel geometries.
+
+`Surfer` holds a surface (`self.surf`), its inlet and outlet points, and its centerlines, and
+provides the steps that prepare a segmented surface for meshing:
+
+- picking or detecting inlets and outlets (`Surfer.set_inlets_outlets`, `Surfer.get_open_profiles`)
+- generating centerlines (`Surfer.generate_centerlines`, `Surfer.generate_centerlines_multi`)
+- clipping the ends square to the centerlines (`Surfer.clip_endpoints_with_tubeclipper`,
+  `Surfer.clip_boundaries`)
+- splitting the centerlines into branches and projecting the branch `GroupIds` onto the surface
+  (`Surfer.branch_centerlines`, `Surfer.branch_centerlines_pt`)
+- aneurysms: isolating the sacs and marking regions a set distance from them
+  (`Surfer.extract_sacs`, `Surfer.mark_distance_from_sacs`)
+
+`geometry_tools.meshing.Mesher` inherits from `Surfer` and adds volume meshing. Most methods rely on
+VMTK through `geometry_tools.vmtk_wrapper`. Clipping also needs TubeClipper.
+"""
 import pyvista as pv 
 import numpy as np
 from geometry_tools import vmtk_wrapper as vmtk
@@ -70,11 +84,19 @@ class Surfer():
         return self._picked_ids #[self._picked_id]
 
     def copy_structure(self):
+        """ Rebuild `self.surf` as a plain PolyData with the same points and cells but no arrays.
+
+        Surfaces coming out of VMTK sometimes have unusual dtypes; rebuilding them avoids that.
+        """
         surf_new = pv.PolyData()
         surf_new.copy_structure(self.surf)
         self.surf = surf_new
         
     def copy_arrays(self, src, dst):
+        """ Copy point and cell arrays from `src` to `dst` by nearest neighbour.
+
+        See `geometry_tools.common.copy_arrays`. Returns `dst`.
+        """
         # tree = KDTree(src.points)
         # _, ii = tree.query(dst.points, k=1)
         # for arr in src.point_data:
@@ -90,6 +112,10 @@ class Surfer():
         return cc.copy_arrays(src, dst)
 
     def decimate_surface(self, target_edge_length):
+        """ Coarsen `self.surf` toward `target_edge_length`, keeping its arrays.
+
+        See `geometry_tools.common.decimate_edge_length`.
+        """
         # edges = self.surf.extract_all_edges()
         # mean_el = edges.compute_cell_sizes().cell_data['Length'].mean()
         # target_el = target_edge_length
@@ -99,7 +125,18 @@ class Surfer():
         self.surf = cc.decimate_edge_length(self.surf, target_edge_length)
 
     def clip_endpoints_with_spheres(self, factor=1.4, outlet_clip=None):
-        
+        """ Clip the inlets and outlets with spheres and keep the largest remaining piece.
+
+        Each sphere is centred on an inlet or outlet point, with radius `factor` times the maximum
+        inscribed sphere radius of the nearby centerline (`self.centerlines_aneurysm`).
+
+        Args:
+            factor: sphere radius as a multiple of the local maximum inscribed sphere radius.
+            outlet_clip: spheres to clip with. If None, they are built as described above.
+
+        Returns:
+            The spheres used, so the same clip can be repeated.
+        """
         if outlet_clip is None:
             endpoints = np.concatenate([self.inlet_points, self.outlet_points], axis=0)
             endlets = pv.wrap(endpoints)
@@ -190,6 +227,10 @@ class Surfer():
         return endpoints_pv
 
     def clip_endpoints_with_vmtk(self):
+        """ Clip the ends with vmtkSurfaceEndClipper, using `self.centerlines` for the clip normals.
+
+        Returns the clipped surface. `self.surf` is not changed.
+        """
         surf = vmtk.surface_end_clipper(self.surf, centerlines=self.centerlines)
         return surf
 
@@ -311,6 +352,14 @@ class Surfer():
         return centers 
 
     def select_geodesic(self,title='Isolate aneurysms.', mask_name='Mask'):
+        """ Draw closed loops on the surface to mark regions, such as aneurysm necks.
+
+        Opens `geometry_tools.common.SelectGeodesic`. Each loop splits the surface in two, and the
+        points on the smaller side get 1 in the `mask_name` point array of `self.surf`.
+
+        Returns:
+            The picked loop points.
+        """
         s = cc.SelectGeodesic(self.surf, scalars=mask_name)
         pts = s.interact(title=title)
         self.surf = s.mesh
@@ -461,6 +510,11 @@ class Surfer():
     #         return centerlines_og    
     
     def _project_centerline_attrs(self, centerlines, centerlines_branched):
+            """ Copy `GroupIds` and `Blanking` from the branched centerlines onto the original ones.
+
+            Each original centerline point takes the values of its nearest branched point.
+            Returns a copy of `centerlines` with the two point arrays added.
+            """
             centerlines_og = centerlines.copy()
             centerlines_branched = centerlines_branched.copy()
 
@@ -492,7 +546,20 @@ class Surfer():
             return centerlines_og    
     
     def branch_centerlines(self, project_back=True):
+        """ Split the aneurysm centerlines into branches and label the surface with them.
 
+        Sets `self.centerlines_aneurysm_branched` and projects its `GroupIds` onto `self.surf`.
+        Then updates `self.aneurysm_group_ids` and fixes stray group IDs with
+        `geometry_tools.common.fix_vmtk_group_ids`. For surfaces without aneurysms, use
+        `Surfer.branch_centerlines_pt`.
+
+        Args:
+            project_back: also store the branch IDs on the unsplit centerlines, in
+                `self.centerlines_aneurysm_split`.
+
+        Returns:
+            self. The projection onto the surface is slow on large surfaces.
+        """
         self.centerlines_aneurysm_branched = vmtk.centerline_branches_ids(self.centerlines_aneurysm)
 
         if project_back:
@@ -512,6 +579,18 @@ class Surfer():
         return self
 
     def branch_centerlines_pt(self, project_back=True):
+        """ Split `self.centerlines` into branches and label the surface with them.
+
+        Version of `Surfer.branch_centerlines` for surfaces without aneurysms (such as PT).
+        Sets `self.centerlines_branched` and projects its `GroupIds` onto `self.surf`.
+
+        Args:
+            project_back: also store the branch IDs on the unsplit centerlines, in
+                `self.centerlines_split`.
+
+        Returns:
+            self
+        """
         print("\nBranching centerlines...")
         self.centerlines_branched = vmtk.centerline_branches_ids(self.centerlines)
 
@@ -525,7 +604,11 @@ class Surfer():
         #print(self.surf.point_data)
         return self
 
-    def update_aneurysm_group_ids(self):    
+    def update_aneurysm_group_ids(self):
+        """ Set `self.aneurysm_group_ids` from the surface `GroupIds` nearest each aneurysm point.
+
+        Also rebuilds the branch adjacency graph (`Surfer.get_group_adjacency`). Returns self.
+        """
         tree = KDTree(self.surf.points)
         nearest_temp_idx = tree.query(self.aneurysm_points, k=1)[1]
         self.aneurysm_group_ids = [str(x) for x in self.surf.point_data['GroupIds'][nearest_temp_idx]]
@@ -649,6 +732,12 @@ class Surfer():
                 self.edges, self.G = vmtk.extract_group_adjacency(self.centerlines)
 
     def get_bifurcation_ref_systems_vectors(self):
+        """ Compute VMTK bifurcation reference systems and bifurcation vectors.
+
+        Uses the aneurysm centerlines if `self.include_aneurysms` is True (setting `self.ref_aneurysm`
+        and `self.bif_vec_aneurysm`), otherwise `self.centerlines_branched` (setting `self.ref` and
+        `self.bif_vec`). Run a branch_centerlines method first.
+        """
         # self.ref = vmtk.bifurcation_ref_systems(self.centerlines_branched)
         # self.bif_vec = vmtk.get_bifurcation_vectors(self.centerlines_branched, self.ref)
 

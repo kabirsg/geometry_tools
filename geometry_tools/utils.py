@@ -1,3 +1,4 @@
+""" Names of the VMTK arrays used across the package, such as `radiusArrayName`. """
 from pathlib import Path 
 
 radiusArrayName = 'MaximumInscribedSphereRadius'

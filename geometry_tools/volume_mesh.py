@@ -1,3 +1,11 @@
+""" Analysis of existing volume meshes.
+
+`VolumeMesh` loads a volume mesh, splits it into pieces by `CellEntityIds` (wall and caps), and
+takes the wall as its surface, so the `geometry_tools.surface.Surfer` methods can be used on it.
+`VolumeMesh.create_sac_mask` marks aneurysm sac regions in the mesh.
+
+This module uses the old PyVista `cell_arrays` / `point_arrays` names and needs an older PyVista.
+"""
 import pyvista as pv 
 import numpy as np
 from geometry_tools import vmtk_wrapper as vmtk
@@ -20,6 +28,12 @@ class VolumeMesh(Surfer):
     """
 
     def __init__(self, surf=None, mesh=None, inlet_points=None, outlet_points=None, aneurysm_points=None):
+        """ Load `mesh` and extract its surface.
+
+        If the mesh has `CellEntityIds`, the pieces are stored in `self.pieces` (keyed by ID), the
+        wall (ID 1) becomes `self.surf`, and the volume (ID 0) becomes `self.inner_mesh`. Otherwise
+        the outer surface is extracted. The `surf` argument is not used.
+        """
         self.mesh = mesh
         self.inlet_points = inlet_points
         self.outlet_points = outlet_points

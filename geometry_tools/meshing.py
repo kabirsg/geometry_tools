@@ -1,4 +1,21 @@
-import pyvista as pv 
+""" Volume meshing and solver input files.
+
+`Mesher` extends `geometry_tools.surface.Surfer` with the steps that come after the surface is
+prepared:
+
+- `Mesher.surface_preparation` adds flow extensions, builds the `Size` array from local radius and
+  curvature, and remeshes the surface (used by `surface_process.py`, mainly for aneurysms).
+- `Mesher.generate_volume_mesh` builds the tetrahedral mesh with a boundary layer, using
+  vmtkMeshGenerator and the surface's `Size` array.
+- `Mesher.generate_h5_file`, `Mesher.generate_info_file` and `Mesher.generate_xml_gz_file` write the
+  mesh, boundary conditions and FEniCS mesh that the lab's solver reads.
+- `Mesher.generate_flow_rates` splits the inlet flow among the outlets.
+
+A `Mesher` can be built from a surface, or from an existing volume mesh with a `CellEntityIds`
+array, in which case the wall (entity 1) is extracted as the surface. VMTK's TetGen meshing can be
+unreliable; check every mesh with `meshquality.py`.
+"""
+import pyvista as pv
 import numpy as np
 from geometry_tools import vmtk_wrapper as vmtk
 from geometry_tools.surface import Surfer
@@ -387,6 +404,15 @@ class Mesher(Surfer):
         self.outlet_flow_divisions = dict(zip(new_out_flow_keys, out_flow_div_values))
 
     def generate_volume_mesh(self, SkipRemeshing=0):
+        """ Build the volume mesh from `self.surf` and store it in `self.mesh`.
+
+        Uses vmtkMeshGenerator with the surface's `Size` array as the target edge length and a
+        4-sublayer boundary layer (see `geometry_tools.vmtk_wrapper.volume_meshing`).
+
+        Args:
+            SkipRemeshing: 1 if `self.surf` has already been remeshed to the `Size` array, so
+                vmtk meshes it as-is. 0 lets vmtk remesh the surface first.
+        """
         mesh = vmtk.volume_meshing(self.surf, SkipRemeshing=SkipRemeshing)
         self.mesh = mesh
 
