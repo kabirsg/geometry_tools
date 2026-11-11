@@ -32,6 +32,29 @@ def clipper(surf):
     surf = pv.wrap(clipper.Surface)
     return surf
 
+def new_clipper(surf):
+    """ Interactively clip branches """
+
+    renderer = vmtkscripts.vmtkRenderer()
+    renderer.Initialize()
+
+    clipper = vmtkscripts.vmtkSurfaceClipper()
+    clipper.vmtkRenderer = renderer
+    clipper.Surface = surf
+    clipper.WidgetType = 'box'
+    clipper.CleanOutput = 1
+    clipper.Interactive = 1
+    clipper.Execute()
+    surf = pv.wrap(clipper.Surface)
+
+    # vmtkRenderer.Deallocate() only drops references; explicitly close the X window
+    # so no stale events hit a destroyed window when the next pyvista Plotter opens
+    renderer.RenderWindow.Finalize()
+    renderer.RenderWindowInteractor.TerminateApp()
+    renderer.Deallocate()
+    del renderer
+    return surf
+
 def centerlines(surf, seed_selector='pickpoint', resampling=1, 
                 resampling_step_length=0.05, smoothing=True, 
                 iterations=100, sm_factor=0.1, src_ids=[], 
@@ -972,3 +995,16 @@ def flow_ext(surf, centerlines, inlet_ids):
 
     Surface = flowExtensionsFilter.GetOutput()
     return Surface
+
+def surface_subdivision(surf, method='loop', subdivisions=1):
+    """ Subdivide a triangulated surface with VMTK.
+
+    method can be 'linear', 'butterfly' or 'loop'.
+    """
+    subdivider = vmtkscripts.vmtkSurfaceSubdivision()
+    subdivider.Surface = surf
+    subdivider.Method = method
+    subdivider.NumberOfSubdivisions = subdivisions
+    subdivider.Execute()
+    surf = pv.wrap(subdivider.Surface)
+    return surf
