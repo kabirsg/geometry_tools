@@ -41,6 +41,7 @@ def main():
             print("="*50)
             print(f"ERROR ON CASE {case['case_name']}: {e}")
             print("="*50)
+            failed_cases.append(case["case_name"])
         print(f'Finished {case["case_name"]}!')
 
     print(f"Successfully generated centerlines for: {success_cases}")
